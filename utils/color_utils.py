@@ -36,8 +36,35 @@
 #     Centroid averaged in CIELAB space; perceptually uniform.
 #   get_category_colors(category) -> List[Tuple[L*, a*, b*]]
 #     All colors in a category as CIELAB tuples.
+#   get_category_mahalanobis_distances(category) -> List[Tuple[str, float]]
+#     All colors sorted by Mahalanobis distance from the category centroid.
+#     Returns [(hex, distance), ...] ascending. Falls back to Euclidean if covariance
+#     is singular (e.g. fewer than 4 distinct points).
+#   get_color_mahalanobis_distance(category, L, a, b) -> float
+#     Mahalanobis distance of a single CIELAB point from its category's distribution.
+#     Useful for assigning/scoring an unknown color against a trained category.
 #   summary()
 #     Print color count per category.
+#
+# Distance from centroid — Mahalanobis in CIELAB
+#   Colors in each category are represented as points in the 3-D CIELAB space
+#   (L*, a*, b*).  The category's covariance matrix S is computed over all member
+#   points, capturing both per-axis variance and the axis correlations within that
+#   hue family.  The Mahalanobis distance for a point x from centroid μ is:
+#
+#       d_M(x, μ) = sqrt( (x − μ)ᵀ · S⁻¹ · (x − μ) )
+#
+#   Why Mahalanobis over Euclidean ΔE?  CIELAB is perceptually uniform but a
+#   category's natural spread is never isotropic: a warm-red group may vary widely
+#   in lightness yet be tightly clustered in hue angle.  S⁻¹ normalises each
+#   direction by its actual spread, so d_M = 1 means "one standard deviation away
+#   along the principal axis of that category", regardless of how elongated or
+#   tilted the cloud is.  This makes distances comparable across categories and
+#   usable as a likelihood proxy (assuming a multivariate Gaussian distribution).
+#
+#   Fallback: if S is singular (fewer than 4 points, or degenerate geometry) the
+#   ordinary Euclidean distance sqrt(ΔL*² + Δa*² + Δb*²) is returned instead,
+#   and a warning is printed.
 #
 # I/O
 #   save_as_csv(output_path)
@@ -49,6 +76,7 @@
 # =============================================================================
 
 import math
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -450,6 +478,59 @@ class ColorLibrary:
         if not hex_list:
             raise ValueError(f"No colors found for '{category}'.")
         return [self._hex_to_lab(hx) for hx in hex_list]
+
+    def _category_inv_cov(self, category: str):
+        """Return (centroid_array, inv_cov_matrix) for a category, or None if singular."""
+        hex_list = self.color_library.get(category, [])
+        points = np.array([self._hex_to_lab(hx) for hx in hex_list])  # (n, 3)
+        centroid = points.mean(axis=0)
+        if len(points) < 4:
+            return centroid, None
+        cov = np.cov(points.T)  # (3, 3)
+        try:
+            inv_cov = np.linalg.inv(cov)
+            # Sanity-check: reject near-singular matrices
+            if not np.all(np.isfinite(inv_cov)):
+                raise np.linalg.LinAlgError("non-finite inverse")
+        except np.linalg.LinAlgError:
+            inv_cov = None
+        return centroid, inv_cov
+
+    def get_category_mahalanobis_distances(self, category: str) -> List[Tuple[str, float]]:
+        """Return [(hex, mahalanobis_distance), ...] sorted ascending by distance from centroid.
+
+        Uses the category's own covariance matrix so that the spread and axis
+        correlations of the colour cloud are taken into account (see module header
+        for a full explanation).  Falls back to Euclidean distance when the
+        covariance matrix is singular.
+        """
+        hex_list = self.color_library.get(category, [])
+        if not hex_list:
+            raise ValueError(f"No colors found for '{category}'.")
+        centroid, inv_cov = self._category_inv_cov(category)
+        results = []
+        for hx in hex_list:
+            p = np.array(self._hex_to_lab(hx))
+            diff = p - centroid
+            if inv_cov is not None:
+                dist = float(math.sqrt(max(0.0, diff @ inv_cov @ diff)))
+            else:
+                dist = float(np.linalg.norm(diff))  # Euclidean fallback
+            results.append((hx, dist))
+        return sorted(results, key=lambda x: x[1])
+
+    def get_color_mahalanobis_distance(self, category: str, L: float, a: float, b: float) -> float:
+        """Mahalanobis distance of a single CIELAB point from the named category's distribution.
+
+        Useful for scoring / classifying an unknown colour against a trained
+        category (lower = more typical of that category).
+        Falls back to Euclidean when the covariance matrix is singular.
+        """
+        centroid, inv_cov = self._category_inv_cov(category)
+        diff = np.array([L, a, b]) - centroid
+        if inv_cov is not None:
+            return float(math.sqrt(max(0.0, diff @ inv_cov @ diff)))
+        return float(np.linalg.norm(diff))
 
     def save_as_csv(self, output_path: str):
         """Save the library as a CSV with 'category', 'L', 'a', 'b' columns (CIELAB)."""
