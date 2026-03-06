@@ -150,3 +150,5 @@ datasets/
 .DS_Store
 
 dataset_generation.ipynb
+datasets/indoorCVPR_09
+datasets/indoorCVPR_09_modified

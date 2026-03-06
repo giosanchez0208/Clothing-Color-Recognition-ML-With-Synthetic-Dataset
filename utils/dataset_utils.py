@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter, zoom
+import cv2
 
 DEFAULT_DIMENSIONS = (224, 224)
 
@@ -35,6 +36,21 @@ def generate_synthetic_clothing_folds(octaves = 5, persistence = 0.5):
 
     img = np.clip(work, 0, 255).astype(np.uint8)
     return img
+
+def color_balance_image(img):
+    # 1. Prepare: Convert to float for math and Linearize
+    img_float = img.astype(np.float32) / 255.0
+    img_linear = _linearization_and_black_level_sub(img_float)
+
+    # 2. White Balance: Estimate and correct illuminant (Shades of Gray)
+    img_wb = _chromatic_adaptation_shades_of_gray(img_linear, p=6)
+
+    # 3. Enhance: Local contrast and exposure correction
+    # Note: Contrast is best handled in non-linear space for human viewing
+    img_gamma = np.power(np.clip(img_wb, 0, 1), 1/2.2)
+    img_final = _exposure_and_local_contrast(img_gamma)
+
+    return (img_final * 255).astype(np.uint8)
 
 # =================================================
 #               HELPER FUNCTIONS
@@ -84,3 +100,47 @@ def _fbm_perlin(shape=(224, 224), base_res=(7, 7), octaves=5, persistence=0.5, s
     noise /= total_amp
     noise = (noise - noise.min()) / (noise.max() - noise.min())
     return (noise * 255).astype(np.uint8)
+
+def _linearization_and_black_level_sub(img, black_level=0.0):
+    """Subtracts base sensor noise and undoes gamma compression."""
+    # Subtract black level (clipped to 0)
+    img = np.maximum(img - black_level, 0)
+    # De-gamma (Standard sRGB approx is 2.2)
+    return np.power(img, 2.2)
+
+def _chromatic_adaptation_shades_of_gray(img, p=6):
+    """Estimates the illuminant using the Lp-norm (Shades of Gray)."""
+    # Calculate the p-th power of the image
+    img_p = np.power(img, p)
+    
+    # Calculate the p-th mean for each channel (B, G, R)
+    # We use the Minkowski norm: (1/N * sum(x^p))^(1/p)
+    white_b = np.power(np.mean(img_p[:, :, 0]), 1/p)
+    white_g = np.power(np.mean(img_p[:, :, 1]), 1/p)
+    white_r = np.power(np.mean(img_p[:, :, 2]), 1/p)
+    
+    # Scale to prevent dimming (preserve G or average brightness)
+    avg_white = (white_b + white_g + white_r) / 3.0
+    
+    img[:, :, 0] *= (avg_white / (white_b + 1e-8))
+    img[:, :, 1] *= (avg_white / (white_g + 1e-8))
+    img[:, :, 2] *= (avg_white / (white_r + 1e-8))
+    
+    return img
+
+def _exposure_and_local_contrast(img):
+    """Uses CLAHE in LAB space to fix exposure without shifting hues."""
+    # Convert to LAB for Luminance-based processing
+    img_uint8 = (img * 255).astype(np.uint8)
+    lab = cv2.cvtColor(img_uint8, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    cl = clahe.apply(l)
+    
+    # Merge and convert back
+    limg = cv2.merge((cl, a, b))
+    final_bgr = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    
+    return final_bgr.astype(np.float32) / 255.0
