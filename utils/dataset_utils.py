@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter, zoom
+from scipy.stats import truncnorm
 import cv2
 import os
 import random
@@ -179,6 +180,7 @@ class DatasetGenerator:
         right = left + square_width
 
         composed_image[top:bottom, left:right] = inner_square
+        composed_image = _apply_global_lighting(composed_image)
         return composed_image, label_percentages
 
 
@@ -573,3 +575,138 @@ def _exposure_and_local_contrast(img):
     final_bgr = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
     
     return final_bgr.astype(np.float32) / 255.0
+
+
+def _sample_truncated_normal(mean, std, low, high):
+    a = (low - mean) / std
+    b = (high - mean) / std
+    return float(truncnorm.rvs(a, b, loc=mean, scale=std))
+
+
+def _apply_global_lighting(
+    img,
+    p=0.5,
+    brightness_range=(0.3, 1.8),
+    temp_range=(0.75, 1.25),
+    sat_range=(0.3, 2.0),
+    hue_shift_deg=25.0,
+    jpeg_quality_range=(40, 85),
+):
+    """Apply stochastic global lighting augmentations to a uint8 BGR image.
+
+    Args:
+        p: Probability each effect is applied.
+        brightness_range: (low, high) multiplier for overall brightness.
+        temp_range: (low, high) uniform scale applied independently to R and B channels.
+        sat_range: (low, high) multiplier for HSV saturation channel.
+        hue_shift_deg: Max hue rotation in degrees (applied as ±hue_shift_deg).
+        jpeg_quality_range: (min, max) JPEG quality for compression simulation.
+    """
+    out = img.astype(np.float32) / 255.0
+    if random.random() < p:
+        out = _augment_brightness_contrast(out, brightness_range=brightness_range)
+    if random.random() < p:
+        out = _augment_color_temperature(out, temp_range=temp_range)
+    if random.random() < p:
+        out = _augment_color_jitter(out, sat_range=sat_range, hue_shift_deg=hue_shift_deg)
+    if random.random() < p:
+        out = _augment_shadow(out)
+    if random.random() < p:
+        out = _augment_gaussian_blur(out)
+    if random.random() < p:
+        out = _augment_salt_and_pepper(out)
+    out = (np.clip(out, 0.0, 1.0) * 255).astype(np.uint8)
+    if random.random() < p:
+        out = _augment_jpeg_compression(out, quality_range=jpeg_quality_range)
+    return out
+
+
+def _augment_brightness_contrast(img_float, brightness_range=(0.3, 1.8)):
+    """Scale overall brightness using Truncated Normal ~ TN(1.0, 0.35, brightness_range)."""
+    low, high = brightness_range
+    factor = _sample_truncated_normal(mean=1.0, std=0.35, low=low, high=high)
+    return img_float * factor
+
+
+def _augment_color_temperature(img_float, temp_range=(0.75, 1.25)):
+    """Simulate warm/cool lighting by independently scaling the R and B channels."""
+    low, high = temp_range
+    r_scale = random.uniform(low, high)
+    b_scale = random.uniform(low, high)
+    out = img_float.copy()
+    out[:, :, 2] = np.clip(out[:, :, 2] * r_scale, 0.0, 1.0)  # R channel (BGR index 2)
+    out[:, :, 0] = np.clip(out[:, :, 0] * b_scale, 0.0, 1.0)  # B channel (BGR index 0)
+    return out
+
+
+def _augment_color_jitter(img_float, sat_range=(0.3, 2.0), hue_shift_deg=25.0):
+    """Shift hue by ±hue_shift_deg and scale saturation via TN(1.0, 0.4, sat_range)."""
+    img_uint8 = (np.clip(img_float, 0.0, 1.0) * 255).astype(np.uint8)
+    hsv = cv2.cvtColor(img_uint8, cv2.COLOR_BGR2HSV).astype(np.float32)
+    # OpenCV H is in [0, 180]; shift by a random amount within ±hue_shift_deg
+    hue_shift = random.uniform(-hue_shift_deg, hue_shift_deg)
+    hsv[:, :, 0] = (hsv[:, :, 0] + hue_shift) % 180.0
+    # Saturation scaling: Δs ~ TN(1.0, 0.4, sat_range)
+    low, high = sat_range
+    sat_scale = _sample_truncated_normal(mean=1.0, std=0.4, low=low, high=high)
+    hsv[:, :, 1] = np.clip(hsv[:, :, 1] * sat_scale, 0.0, 255.0)
+    result = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+    return result.astype(np.float32) / 255.0
+
+
+def _augment_gaussian_blur(img_float):
+    """Blur with sigma drawn from a half-normal, clipped to [0.1, 1.5]."""
+    sigma = float(np.clip(abs(np.random.normal(0.0, 0.5)), 0.1, 1.5))
+    return gaussian_filter(img_float, sigma=[sigma, sigma, 0])
+
+
+def _augment_shadow(img_float, max_strength=0.55):
+    """Overlay a directional gradient shadow with a subtle cool (blue) tint in the dark region.
+
+    A linear ramp runs from 0 (no shadow) at one image edge to `strength` (full shadow)
+    at the opposite edge, oriented in a random direction. The shadow darkens luminance
+    and slightly boosts the blue channel to mimic ambient skylight.
+    """
+    h, w = img_float.shape[:2]
+    strength = random.uniform(0.1, max_strength)
+
+    direction = random.choice(['left', 'right', 'top', 'bottom'])
+    if direction == 'left':
+        ramp = np.tile(np.linspace(strength, 0.0, w, dtype=np.float32), (h, 1))
+    elif direction == 'right':
+        ramp = np.tile(np.linspace(0.0, strength, w, dtype=np.float32), (h, 1))
+    elif direction == 'top':
+        ramp = np.tile(np.linspace(strength, 0.0, h, dtype=np.float32)[:, None], (1, w))
+    else:
+        ramp = np.tile(np.linspace(0.0, strength, h, dtype=np.float32)[:, None], (1, w))
+
+    out = img_float.copy()
+    # Darken all channels
+    out = out * (1.0 - ramp[:, :, None])
+    # Cool the shadow: lift blue slightly proportional to the ramp
+    cool_amount = ramp * 0.12
+    out[:, :, 0] = np.clip(out[:, :, 0] + cool_amount, 0.0, 1.0)  # B channel
+    return np.clip(out, 0.0, 1.0)
+
+
+def _augment_jpeg_compression(img_uint8, quality_range=(40, 85)):
+    """Simulate JPEG camera compression artifacts by encoding and decoding at a random quality."""
+    quality = random.randint(*quality_range)
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, quality]
+    _, encoded = cv2.imencode('.jpg', img_uint8, encode_params)
+    return cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+
+
+def _augment_salt_and_pepper(img_float):
+    """Add salt-and-pepper noise with a uniformly sampled density in [0.001, 0.005]."""
+    density = random.uniform(0.001, 0.005)
+    out = img_float.copy()
+    n_noise = int(density * out.shape[0] * out.shape[1])
+    rng = np.random.default_rng()
+    salt_y = rng.integers(0, out.shape[0], n_noise)
+    salt_x = rng.integers(0, out.shape[1], n_noise)
+    pepper_y = rng.integers(0, out.shape[0], n_noise)
+    pepper_x = rng.integers(0, out.shape[1], n_noise)
+    out[salt_y, salt_x] = 1.0
+    out[pepper_y, pepper_x] = 0.0
+    return out
