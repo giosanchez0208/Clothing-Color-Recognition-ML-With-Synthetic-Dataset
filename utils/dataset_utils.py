@@ -105,7 +105,7 @@ class InnerSquareGenerator:
 
     def generate(self):
         inner_square, label_percentages = self.compose_random_color()
-        textured_inner_square = self.apply_synthetic_fold_texture(inner_square) if random.random() < 0.4 else inner_square
+        textured_inner_square = self.apply_synthetic_fold_texture(inner_square) if random.random() < 0.85 else inner_square
         return textured_inner_square, label_percentages
     
     
