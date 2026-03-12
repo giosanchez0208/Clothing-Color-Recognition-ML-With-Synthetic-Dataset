@@ -153,3 +153,5 @@ datasets/indoorCVPR_09
 datasets/indoorCVPR_09_modified
 datasets/generated
 document_images/
+scratch.txt
+videos/
