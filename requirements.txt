@@ -1,0 +1,44 @@
+# Clothing Colour Recognition — pinned to a verified-working environment
+# (Python 3.13, Windows 11, RTX 4050 / CUDA 13.0)
+#
+# IMPORTANT: torch and torchvision must come from PyTorch's CUDA index, or pip
+# will silently install CPU-only wheels and training will fall back to CPU.
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+#   pip install -r requirements.txt
+#
+# For a different CUDA version, swap cu130 for the matching tag; see
+# https://pytorch.org/get-started/locally/
+
+# --- deep learning ---------------------------------------------------------
+torch==2.13.0
+torchvision==0.28.0
+
+# --- pose detection (inference pipeline) -----------------------------------
+ultralytics==8.4.118
+
+# --- image processing ------------------------------------------------------
+opencv-python==5.0.0.93
+pillow==12.2.0
+
+# --- numerics --------------------------------------------------------------
+numpy==2.4.4
+pandas==3.0.5
+scipy==1.18.0
+
+# --- plotting / analysis ---------------------------------------------------
+matplotlib==3.11.1
+seaborn==0.13.2
+
+# --- export ----------------------------------------------------------------
+onnx==1.22.0
+
+# --- data fetching ---------------------------------------------------------
+# MIT's indoorCVPR_09.tar is dead (404); backgrounds come from the HuggingFace
+# mirror Voxel51/IndoorSceneRecognition instead.
+huggingface-hub==1.27.0
+
+# --- notebooks -------------------------------------------------------------
+jupyterlab==4.6.3
+ipykernel==7.3.0
+tqdm==4.70.0

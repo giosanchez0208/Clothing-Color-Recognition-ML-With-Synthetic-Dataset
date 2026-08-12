@@ -134,12 +134,21 @@ dmypy.json
 *.onnx
 *.joblib
 
-# Dataset directories
+# Datasets
+# Bulk artifacts (background images, 22k generated samples) stay out of git —
+# they live on HuggingFace. The small colour tables are the actual output of
+# the taxonomy + Voronoi-resampling stages and MUST be tracked: without them
+# the pipeline cannot be run from step 1.
+#
+# NOTE: `datasets/*` (not `datasets/`) is deliberate. Git cannot re-include a
+# file whose parent directory is excluded, so excluding the directory itself
+# would make the `!` rules below silently dead.
 data/
-datasets/
-*.csv
+datasets/*
 *.npy
 *.npz
+*.csv
+!datasets/*.csv
 
 # IDE
 .vscode/
@@ -149,9 +158,13 @@ datasets/
 *~
 .DS_Store
 
-datasets/indoorCVPR_09
-datasets/indoorCVPR_09_modified
-datasets/generated
 document_images/
 scratch.txt
 videos/
+
+# Local training artifacts
+checkpoints/
+runs/
+exports/
+*.tar
+yolo*.pt

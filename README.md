@@ -20,7 +20,7 @@ A classifier trained to output a single hard label is forced to make an arbitrar
 
 ### Label Space
 
-The 13 categories come from the ISCC-NBS Level 3 color system: `red`, `orange`, `yellow`, `green`, `blue`, `violet`, `purple`, `white`, `gray`, `black`, `pink`, `brown`, `olive`. We built the taxonomy by tokenizing all ISCC-NBS compound color names (e.g., "dark purplish red") into subwords, discarding modifiers (`dark`, `light`, `grayish`, etc.), and mapping the remaining base hue words to 13 simplified categories. The details live in `color_categorization.ipynb`. The adjacent pairs—yellow/orange, blue/violet, violet/purple, white/gray—are where all the interesting failures happen, as the confusion analysis below shows.
+The 13 categories come from the ISCC-NBS Level 3 color system: `red`, `orange`, `yellow`, `green`, `blue`, `violet`, `purple`, `white`, `gray`, `black`, `pink`, `brown`, `olive`. We built the taxonomy by tokenizing all ISCC-NBS compound color names (e.g., "dark purplish red") into subwords, discarding modifiers (`dark`, `light`, `grayish`, etc.), and mapping the remaining base hue words to 13 simplified categories. The details live in `notebooks/01_taxonomy.ipynb`. The adjacent pairs—yellow/orange, blue/violet, violet/purple, white/gray—are where all the interesting failures happen, as the confusion analysis below shows.
 
 ---
 
@@ -96,15 +96,15 @@ where $P$ is the soft label and $Q$ is the model's Softmax output. This penalize
 
 ### V1: First Pass
 
-V1 training (`notebooks/training.ipynb`) used AdamW with lr `1e-4`, weight decay `5e-2`, batch size 64, and ReduceLROnPlateau scheduling. Training augmentations: horizontal flips, 90° rotational sampling, ColorJitter, a custom warm/cool temperature transform, random erasing, and ImageNet normalization. Best V1 val loss: **0.7474** at epoch 25.
+V1 training (`notebooks/05_training_v1.ipynb`) used AdamW with lr `1e-4`, weight decay `5e-2`, batch size 64, and ReduceLROnPlateau scheduling. Training augmentations: horizontal flips, 90° rotational sampling, ColorJitter, a custom warm/cool temperature transform, random erasing, and ImageNet normalization. Best V1 val loss: **0.7474** at epoch 25.
 
-V1 fine-tuning (`notebooks/finetuning.ipynb`) introduced an adaptive loop: per-class MAE drives class weights, val loss trend drives augmentation intensity, stagnation triggers label smoothing increases. Discriminative learning rates gave earlier backbone layers 1000× smaller updates than the classifier head. The result was underwhelming—best fine-tuned val loss of **0.7469**, a marginal improvement. Early stopping triggered after 15 epochs as val loss drifted upward. The confusion structure barely changed. Orange/yellow remained the worst pair at 0.173 average leakage.
+V1 fine-tuning (`notebooks/06_finetuning_v1.ipynb`) introduced an adaptive loop: per-class MAE drives class weights, val loss trend drives augmentation intensity, stagnation triggers label smoothing increases. Discriminative learning rates gave earlier backbone layers 1000× smaller updates than the classifier head. The result was underwhelming—best fine-tuned val loss of **0.7469**, a marginal improvement. Early stopping triggered after 15 epochs as val loss drifted upward. The confusion structure barely changed. Orange/yellow remained the worst pair at 0.173 average leakage.
 
 This told us something useful: the bottleneck was upstream of the optimizer. No amount of learning rate scheduling or loss weighting would fix a synthetic distribution that didn't accurately represent real boundary colors. Version 2 needed to attack the data, not the training loop.
 
 ### V2: Better Data, Same Model
 
-V2 training (`notebooks_v2/training.ipynb`) started from the V1 fine-tuned checkpoint and trained on the V2 dataset with the resampled color library, 7 pattern types, and expanded augmentations. All 23.5M parameters were trainable from the start with discriminative learning rates:
+V2 training (`notebooks/09_training_v2.ipynb`) started from the V1 fine-tuned checkpoint and trained on the V2 dataset with the resampled color library, 7 pattern types, and expanded augmentations. All 23.5M parameters were trainable from the start with discriminative learning rates:
 
 | Layer Group | Params | LR Multiplier |
 |---|---:|---|
@@ -146,7 +146,7 @@ Dynamic INT8 quantization (on `nn.Linear` and `nn.Conv2d`) was essentially lossl
 
 ## Inference Pipeline
 
-`camera_test.ipynb` and `utils/test_utils.py` run end-to-end on webcam or video input:
+`notebooks/11_inference.ipynb` and `utils/test_utils.py` run end-to-end on webcam or video input:
 
 1. YOLOv11n-pose detects people and extracts shoulder/hip keypoints (runs at 384px input for CPU efficiency)
 2. `_estimate_torso` derives a torso bounding box from whatever keypoints are visible, falling back to proportional estimates when shoulders or hips are occluded
@@ -160,19 +160,22 @@ The entire pipeline avoids PIL and unnecessary copies. Normalization happens dir
 
 ## Notebook Reference
 
+Notebooks run in numeric order. A `_v1` / `_v2` suffix marks the two stages that
+got a second pass; everything unsuffixed is shared by both versions.
+
 | Notebook | What it does |
 |---|---|
-| `notebooks/color_categorization.ipynb` | Builds 13-category taxonomy from ISCC-NBS, exports categorized colors |
-| `notebooks/preview_color_categories.ipynb` | Visualizes category centroids and Mahalanobis-ranked member colors in CIELAB |
-| `notebooks/dataset_preparation.ipynb` | Normalizes IndoorCVPR_09 backgrounds (white balance, CLAHE) |
-| `notebooks/dataset_generation.ipynb` | V1 synthetic dataset generation (4 patterns, 286 colors) |
-| `notebooks/training.ipynb` | V1 ResNet-50 training |
-| `notebooks/finetuning.ipynb` | V1 adaptive fine-tuning with discriminative LRs |
-| `notebooks/camera_test.ipynb` | Live webcam and video inference |
-| `notebooks_v2/dataset_preparation.ipynb` | Confusion-aware Voronoi resampling of color library (325 colors, 25/category) |
-| `notebooks_v2/dataset_generation.ipynb` | V2 synthetic dataset generation (7 patterns, new augmentations) |
-| `notebooks_v2/training.ipynb` | V2 adaptive training on cleaned dataset |
-| `notebooks_v2/distill_and_quantize.ipynb` | Knowledge distillation to MobileNetV3-Small + INT8 quantization |
+| `notebooks/01_taxonomy.ipynb` | Builds 13-category taxonomy from ISCC-NBS, exports categorized colors |
+| `notebooks/02_taxonomy_preview.ipynb` | Visualizes category centroids and Mahalanobis-ranked member colors in CIELAB |
+| `notebooks/03_backgrounds.ipynb` | Normalizes IndoorCVPR_09 backgrounds (white balance, CLAHE) |
+| `notebooks/04_synthesis_v1.ipynb` | V1 synthetic dataset generation (4 patterns, 286 colors) |
+| `notebooks/05_training_v1.ipynb` | V1 ResNet-50 training |
+| `notebooks/06_finetuning_v1.ipynb` | V1 adaptive fine-tuning with discriminative LRs |
+| `notebooks/07_color_library_v2.ipynb` | Confusion-aware Voronoi resampling of color library (325 colors, 25/category) |
+| `notebooks/08_synthesis_v2.ipynb` | V2 synthetic dataset generation (7 patterns, new augmentations) |
+| `notebooks/09_training_v2.ipynb` | V2 adaptive training on cleaned dataset |
+| `notebooks/10_distill_quantize_v2.ipynb` | Knowledge distillation to MobileNetV3-Small + INT8 quantization |
+| `notebooks/11_inference.ipynb` | Live webcam and video inference |
 
 ---
 
