@@ -88,11 +88,17 @@ def build_tasks(src_root, dst_root, limit=None):
         for fn in sorted(os.listdir(cat_dir)):
             if not fn.lower().endswith(VALID_EXT):
                 continue
-            name = fn if fn not in seen else f"{category}_{fn}"
-            if name in seen:
-                continue
-            seen.add(name)
-            out_name = os.path.splitext(name)[0] + ".jpg"
+            # Uniqueness must be checked on the OUTPUT name, not the input:
+            # everything is re-encoded to .jpg, so `foo.png` and `foo.jpg` in
+            # different categories both collapse to `foo.jpg` and would
+            # silently overwrite each other if we deduped on the input name.
+            stem = os.path.splitext(fn)[0]
+            out_name = f"{stem}.jpg"
+            if out_name in seen:
+                out_name = f"{category}_{stem}.jpg"
+            if out_name in seen:
+                continue                      # give up on a double collision
+            seen.add(out_name)
             dst = os.path.join(dst_root, out_name)
             if not os.path.exists(dst):
                 tasks.append((os.path.join(cat_dir, fn), dst))
