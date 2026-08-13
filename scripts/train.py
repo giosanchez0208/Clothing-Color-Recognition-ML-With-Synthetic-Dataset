@@ -12,14 +12,23 @@ AMP + gradient accumulation
     accumulating 2 steps keeps the EFFECTIVE batch at 64 so the optimisation
     trajectory stays comparable to the original run.
 
-No photometric train-time augmentation
+Trainer-controlled photometric augmentation
     V2 applied ColorJitter + RandomColorTemperature at load time on top of the
-    augmentation already baked into each JPEG. Measured, the live layer carried
-    ~70% of the photometric variance while only the baked layer is recorded in
-    labels.csv -- so the metadata described 30% of what the model actually saw
-    (corr 0.55). That makes per-axis diagnosis and curriculum control
-    meaningless. Geometric augmentation (flip / rot90 / erasing) is kept: it
-    supplies per-epoch variety without touching any recorded axis.
+    augmentation already baked into each JPEG. Measured, that live layer
+    carried ~70% of the photometric variance while only the baked layer is
+    recorded in labels.csv (corr recorded-vs-actual = 0.55), so any curriculum
+    steering by metadata was steering with ~30% of the wheel.
+
+    Run A is the ablation arm with that layer removed, which quantifies its
+    regularisation contribution: the train/val gap widens monotonically from
+    0.048 (epoch 10) to 0.264 (epoch 80).
+
+    Both properties are wanted, and neither configuration supplies both. The
+    resolution is utils/controlled_augment.ControlledPhotometric: the same live
+    augmentation, but the TRAINER owns its per-axis strength rather than
+    torchvision. The loop knows exactly what was applied because it set it, so
+    nothing needs logging -- and the probe's weak axis maps directly onto a
+    strength dial. --no-live-aug reproduces the ablation arm.
 
 Starts from ImageNet, not V1
     The original V2 run initialised from V1's finetune_best.pth. That
@@ -57,6 +66,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from utils.controlled_augment import ControlledPhotometric, DEFAULT_STRENGTHS
 from utils.instrumented_generator import COLOR_CLASSES
 
 NUM_CLASSES = len(COLOR_CLASSES)
@@ -132,9 +142,18 @@ class RandomRotate90:
         return TF.rotate(img, random.choice([0, 90, 180, 270]))
 
 
-def build_transforms():
-    """Geometric augmentation only — see module docstring."""
-    train_tf = transforms.Compose([
+def build_transforms(live_strengths=None, live_p=0.5):
+    """Geometric augmentation + trainer-controlled photometric augmentation.
+
+    The photometric layer runs FIRST, on the raw RGB array, because the
+    trainer sets its per-axis strengths and therefore knows exactly what was
+    applied. Passing live_strengths=None disables it entirely (Run A's
+    behaviour), which is measurably under-regularised.
+    """
+    stages = []
+    if live_strengths is not None:
+        stages.append(ControlledPhotometric(live_strengths, p=live_p))
+    train_tf = transforms.Compose(stages + [
         transforms.ToPILImage(),
         transforms.RandomHorizontalFlip(),
         RandomRotate90(),
@@ -156,13 +175,21 @@ def create_model(dropout=0.4):
     return m
 
 
-def get_param_groups(model, base_lr, weight_decay, log):
-    """Discriminative LRs: earlier layers move 1000x slower than the head."""
+def get_param_groups(model, base_lr, weight_decay, log, mults=None):
+    """Discriminative LRs.
+
+    The original (0.001, 0.01, 0.1, 1.0) spread is a *fine-tuning* profile: it
+    assumes the backbone is already adapted and only needs nudging. Applied to
+    an ImageNet cold start it pins backbone_early at base_lr/1000 -- 5e-8 at
+    the default base -- so the early layers never move at all for the whole
+    run. A cold start needs a flatter profile.
+    """
+    m = mults or (0.001, 0.01, 0.1, 1.0)
     buckets = {
-        "backbone_early": {"params": [], "lr": base_lr * 0.001},
-        "layer3": {"params": [], "lr": base_lr * 0.01},
-        "layer4": {"params": [], "lr": base_lr * 0.1},
-        "fc": {"params": [], "lr": base_lr},
+        "backbone_early": {"params": [], "lr": base_lr * m[0]},
+        "layer3": {"params": [], "lr": base_lr * m[1]},
+        "layer4": {"params": [], "lr": base_lr * m[2]},
+        "fc": {"params": [], "lr": base_lr * m[3]},
     }
     for name, p in model.named_parameters():
         p.requires_grad = True
@@ -217,30 +244,60 @@ def evaluate_probe(model, dataset, device, amp, batch_size, workers):
         losses.append(per.cpu())
     per_sample = torch.cat(losses).numpy()
 
-    meta = dataset.df
-    out = {}
+    meta = dataset.df.copy()
+    meta["_loss"] = per_sample
     ctrl_mask = meta["probe_axis"].isna() | (meta["probe_axis"].astype(str) == "")
-    out["_control"] = float(per_sample[ctrl_mask.to_numpy()].mean()) if ctrl_mask.any() else None
+
+    # PAIRED: every render sharing a seed depicts the same garment on the same
+    # background, so subtracting that base's own control cancels content
+    # exactly. The previous unpaired version compared against a global control
+    # drawn from *different* garments, which let six genuinely-free axes finish
+    # below baseline purely because the control group happened to be harder.
+    base_ctrl = (meta[ctrl_mask].groupby("seed")["_loss"].mean()
+                 if ctrl_mask.any() else None)
+    paired = base_ctrl is not None and len(base_ctrl) > 1
+    if paired:
+        meta["_delta"] = meta["_loss"] - meta["seed"].map(base_ctrl)
+    else:
+        meta["_delta"] = meta["_loss"] - (float(per_sample[ctrl_mask.to_numpy()].mean())
+                                          if ctrl_mask.any() else 0.0)
+
+    out = {"_control": float(meta.loc[ctrl_mask, "_loss"].mean()) if ctrl_mask.any() else None,
+           "_paired": bool(paired), "_n_base": int(base_ctrl.size) if paired else 0}
     for axis in sorted(set(meta.loc[~ctrl_mask, "probe_axis"].dropna())):
-        m = (meta["probe_axis"] == axis).to_numpy()
-        sub = meta[m]
-        out[axis] = {
-            float(v): float(per_sample[m][(sub["probe_value"] == v).to_numpy()].mean())
-            for v in sorted(sub["probe_value"].unique())
-        }
+        sub = meta[meta["probe_axis"] == axis]
+        # Values keyed as strings; the delta is the reportable quantity, but
+        # absolute loss is kept so curves remain readable on their own scale.
+        out[axis] = {str(v): float(g["_delta"].mean())
+                     for v, g in sub.groupby("probe_value")}
+        out[axis + "__abs"] = {str(v): float(g["_loss"].mean())
+                               for v, g in sub.groupby("probe_value")}
     return out
 
 
 class Adaptive:
-    """V2's adaptive controller, minus the augmentation knob.
+    """Per-class loss weighting from validation MAE.
 
-    The aug_strength dial drove ColorJitter, which is gone. What remains is
-    per-class weighting from val MAE, and label smoothing on stagnation.
+    Label smoothing is deliberately NOT adaptive here. V2 escalated it on
+    stagnation, on the reasoning "plateau => overfitting => regularise harder".
+    Three problems with that:
+
+      * It never fired. Across Run A's 73 adjustments: 0 increases, 7
+        decreases, and s sat pinned at the 0.02 floor for 90% of training.
+      * No result in the literature supports degrading targets on a plateau.
+        Plateau response belongs on the LR and on the inputs.
+      * Smoothing is the only common regulariser that alters ground truth
+        rather than the model or the input -- and these targets are measured
+        pixel compositions, not estimates (Geng 2016; Singh et al. 2025).
+
+    Smoothing is now a fixed hyperparameter, defaulting to 0. Muller,
+    Kornblith & Hinton (NeurIPS 2019) additionally show a smoothed teacher
+    distils worse, and that the damage is invisible in the teacher's own
+    metrics -- so this default matters most downstream, in distill.py.
     """
 
-    def __init__(self, device, smooth_min=0.02, smooth_max=0.15):
-        self.label_smooth = 0.10
-        self.smooth_min, self.smooth_max = smooth_min, smooth_max
+    def __init__(self, device, label_smooth=0.0):
+        self.label_smooth = label_smooth
         self.class_weights = torch.ones(NUM_CLASSES, device=device)
         self.device = device
 
@@ -250,12 +307,6 @@ class Adaptive:
         worst = torch.topk(mae, 3)
         log("    [adapt] hardest: " + ", ".join(
             f"{COLOR_CLASSES[i]}={mae[i]:.4f}" for i in worst.indices))
-        if val_loss > best_val_loss + 0.02 and epochs_no_improve >= 2:
-            self.label_smooth = min(self.smooth_max, self.label_smooth + 0.01)
-            log(f"    [adapt] label_smooth -> {self.label_smooth:.2f}")
-        elif val_loss <= best_val_loss + 0.005:
-            self.label_smooth = max(self.smooth_min, self.label_smooth - 0.01)
-            log(f"    [adapt] label_smooth -> {self.label_smooth:.2f}")
 
 
 def main():
@@ -276,6 +327,16 @@ def main():
     ap.add_argument("--early-stop", type=int, default=15)
     ap.add_argument("--probe-every", type=int, default=5)
     ap.add_argument("--no-amp", action="store_true")
+    ap.add_argument("--no-live-aug", action="store_true",
+                    help="disable trainer-controlled photometric augmentation "
+                         "(reproduces Run A, which under-regularised)")
+    ap.add_argument("--live-p", type=float, default=0.5)
+    ap.add_argument("--label-smooth", type=float, default=0.0,
+                    help="fixed; 0 keeps the measured label distribution intact")
+    ap.add_argument("--lr-mults", default="0.05,0.2,0.5,1.0",
+                    help="per-group LR multipliers backbone_early,layer3,layer4,fc. "
+                         "V2 used 0.001,0.01,0.1,1.0 -- a fine-tuning profile that "
+                         "freezes early layers on a cold start")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--smoke", action="store_true",
                     help="2 epochs on a small subset — verifies it runs and fits")
@@ -305,8 +366,13 @@ def main():
     log(f"  AMP         : {amp}")
     log(f"  batch       : {args.batch_size} x {args.accum} accum "
         f"= {args.batch_size * args.accum} effective")
+    log(f"  label_smooth: {args.label_smooth}  (fixed; escalation removed)")
+    log(f"  lr          : {args.lr:.1e} base, mults {args.lr_mults}")
 
-    train_tf, eval_tf = build_transforms()
+    live = None if args.no_live_aug else dict(DEFAULT_STRENGTHS)
+    train_tf, eval_tf = build_transforms(live, live_p=args.live_p)
+    log(f"  live aug    : " + ("off" if live is None
+        else ControlledPhotometric(live, args.live_p).describe() + f"  p={args.live_p}"))
     labels_df = pd.read_csv(csv_path, low_memory=False)
     train_ds = ColorDataset(csv_path, img_dir, "train", train_tf, df=labels_df)
     val_ds = ColorDataset(csv_path, img_dir, "val", eval_tf, df=labels_df)
@@ -332,12 +398,13 @@ def main():
 
     model = create_model().to(device)
     log(f"  params      : {sum(p.numel() for p in model.parameters()):,}")
-    groups = get_param_groups(model, args.lr, args.weight_decay, log)
+    mults = tuple(float(x) for x in args.lr_mults.split(","))
+    groups = get_param_groups(model, args.lr, args.weight_decay, log, mults)
     optimizer = torch.optim.AdamW(groups)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min",
                                                            patience=4, factor=0.5)
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
-    adapt = Adaptive(device)
+    adapt = Adaptive(device, label_smooth=args.label_smooth)
     criterion = nn.KLDivLoss(reduction="none")
 
     best_path = os.path.join(args.ckpt_dir, f"{args.tag}_best.pth")
@@ -414,14 +481,16 @@ def main():
 
         adapt.recalibrate(val_loss, best_val, no_improve, val_preds, val_labels, log)
 
-        if (epoch + 1) % args.probe_every == 0 or is_best:
-            pr = evaluate_probe(model, probe_ds, device, amp, args.batch_size, args.workers)
+        if (epoch + 1) % args.probe_every == 0 or epoch == args.epochs - 1:
+            pr = evaluate_probe(model, probe_ds, device, amp, args.batch_size, 0)
             history["probe"][str(epoch + 1)] = pr
             axis_means = {a: float(np.mean(list(v.values())))
-                          for a, v in pr.items() if isinstance(v, dict)}
+                          for a, v in pr.items()
+                          if isinstance(v, dict) and not a.endswith("__abs")}
             worst = sorted(axis_means.items(), key=lambda kv: -kv[1])[:3]
-            log(f"    [probe] control {pr['_control']:.4f} | weakest: " +
-                ", ".join(f"{a}={v:.4f}" for a, v in worst))
+            tag_p = "paired" if pr.get("_paired") else "UNPAIRED"
+            log(f"    [probe] control {pr['_control']:.4f} ({tag_p}) | "
+                f"worst delta: " + ", ".join(f"{a}={v:+.4f}" for a, v in worst))
 
         ck = {"epoch": epoch, "model_state_dict": model.state_dict(),
               "optimizer_state_dict": optimizer.state_dict(),

@@ -294,17 +294,32 @@ def split_background_pool(path_to_bgs, fractions=None, seed=20260813):
     return pools
 
 
-def probe_plan(axes=AXES, n_levels=8, per_cell=25, n_control=200):
-    """Build the (axis, value) work list for a one-factor-at-a-time probe set.
+def probe_plan(axes=AXES, n_levels=8, n_base=60):
+    """Build a PAIRED one-factor-at-a-time probe plan.
 
-    Returns a list of (axis, value) tuples, one entry per image to generate.
-    `axis=None` entries are the neutral control group — the baseline every
-    response curve is measured against.
+    Returns [(base_id, axis, value), ...]. Every entry sharing a base_id is
+    rendered from the same seed, so it depicts the SAME garment on the SAME
+    background — only the augmentation differs. `axis=None` is that base
+    image's own untouched control.
+
+    Why paired: the previous unpaired design gave every cell its own random
+    garment, so "loss above control" mixed the augmentation's effect with
+    whatever the content difficulty happened to be. Measured on the real run,
+    the control group drew harder content than the swept groups (label entropy
+    0.298 vs 0.274, 20.5% solid vs 24.4%) and six genuinely-free axes finished
+    *below* the control baseline as a result — an impossible ordering that was
+    purely a sampling artifact.
+
+    Pairing removes it: loss(image, axis, level) - loss(image, control) is a
+    within-image difference, so content cancels exactly instead of averaging
+    out slowly. Same total images, far lower variance.
     """
     from .instrumented_augment import probe_values
 
-    plan = [(None, None)] * n_control
-    for axis in axes:
-        for value in probe_values(axis, n_levels):
-            plan.extend([(axis, value)] * per_cell)
+    plan = []
+    for b in range(n_base):
+        plan.append((b, None, None))                       # this image's control
+        for axis in axes:
+            for value in probe_values(axis, n_levels):
+                plan.append((b, axis, value))
     return plan

@@ -270,9 +270,35 @@ parallel, resumable, and seeded.
 
 | Document | What it covers |
 |---|---|
-| [`docs/curriculum-design.md`](docs/curriculum-design.md) | Why the generator records its own parameters, why one dataset instead of a difficulty ladder, why the probe set is one-factor-at-a-time, why validation stays frozen, **why each augmentation distribution has the shape it has**, and the two latent bugs instrumentation exposed |
+| [`docs/curriculum-design.md`](docs/curriculum-design.md) | Why the generator records its own parameters, why one dataset instead of a difficulty ladder, why the probe set is one-factor-at-a-time, why validation stays frozen, **why each augmentation distribution has the shape it has**, and the defects instrumentation exposed |
+| [`docs/results.md`](docs/results.md) | Experimental ledger — dataset composition, Run A configuration and results, paired probe findings, and the eight defects found and corrected |
 | [`reports/dataset_report.md`](reports/dataset_report.md) | Generated audit of the current dataset — 10 checks covering integrity, coverage, distribution fidelity, independence, confounding, and leakage |
 | [`NOTICE.md`](NOTICE.md) | Third-party licences, including the AGPL boundary around the optional inference demo |
+
+---
+
+## References
+
+The soft-label formulation is not ad hoc — it is an instance of **Label
+Distribution Learning**, where the target is a distribution rather than a class
+and KL divergence is among the established evaluation measures.
+
+- Geng, X. (2016). **Label Distribution Learning.** *IEEE Transactions on Knowledge and Data Engineering*, 28(7), 1734–1748. [[paper]](https://palm.seu.edu.cn/xgeng/files/tkde16.pdf)
+- Singh, A., Tiwari, A., Hasanbeig, H., & Gupta, P. (2025). **Distributions In, Distributions Out: The Case for Soft-Label Training.** [[arXiv:2511.14117]](https://arxiv.org/abs/2511.14117) — argues that when the target distribution is genuine rather than a noisy estimate, it *is* the correct learning target.
+
+Label smoothing, and why this project treats it as a decision rather than a
+default:
+
+- Szegedy, C., Vanhoucke, V., Ioffe, S., Shlens, J., & Wojna, Z. (2016). **Rethinking the Inception Architecture for Computer Vision.** *CVPR*. [[arXiv:1512.00567]](https://arxiv.org/abs/1512.00567) — introduces label smoothing, motivated by the infinite logit gap that **one-hot** targets demand.
+- Müller, R., Kornblith, S., & Hinton, G. (2019). **When Does Label Smoothing Help?** *NeurIPS*. [[arXiv:1906.02629]](https://arxiv.org/abs/1906.02629) — smoothing improves generalization and calibration but **degrades knowledge distillation**: it tightens same-class clusters and erases the inter-class logit structure a student needs.
+- Lukasik, M., Bhojanapalli, S., Menon, A. K., & Kumar, S. (2020). **Does Label Smoothing Mitigate Label Noise?** *ICML*. [[arXiv:2003.02819]](https://arxiv.org/abs/2003.02819) — smoothing is competitive with loss correction under label noise, and smoothing the teacher **helps** distillation *from noisy data*, reversing the result above.
+
+Supporting method:
+
+- Quattoni, A., & Torralba, A. (2009). **Recognizing Indoor Scenes.** *CVPR*. — background imagery ([mirror](https://huggingface.co/datasets/u5753411/MIT-Indoor-Scenes); MIT's own download is dead as of 2026-08).
+- Centore, P. (2016). **sRGB Centroids for the ISCC-NBS Colour System.** [[paper]](https://munsellcolorscienceforpainters.com/ColourSciencePapers/sRGBCentroidsForTheISCCNBSColourSystem.pdf) — the colour taxonomy's source data.
+- Howard, A., et al. (2019). **Searching for MobileNetV3.** *ICCV*. [[arXiv:1905.02244]](https://arxiv.org/abs/1905.02244) — student architecture.
+- Hinton, G., Vinyals, O., & Dean, J. (2015). **Distilling the Knowledge in a Neural Network.** [[arXiv:1503.02531]](https://arxiv.org/abs/1503.02531) — distillation objective.
 
 ---
 

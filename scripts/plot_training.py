@@ -96,7 +96,11 @@ def main():
     control = pr["_control"]
 
     # ── 2. Response curve per axis ───────────────────────────────────────────
-    present = [a for a in AXES if a in pr]
+    # Paired runs report deltas vs each image's own control (zero baseline);
+    # older unpaired runs report absolute loss vs a shared control group.
+    paired = bool(pr.get("_paired"))
+    baseline = 0.0 if paired else control
+    present = [a for a in AXES if a in pr and not a.endswith("__abs")]
     ncol = 5
     nrow = -(-len(present) // ncol)
     fig, axes = plt.subplots(nrow, ncol, figsize=(3.1 * ncol, 2.7 * nrow),
@@ -111,7 +115,7 @@ def main():
         is_worst = name == worst
         ax.plot(xs, ys, marker="o", ms=4, lw=2,
                 color="crimson" if is_worst else "steelblue")
-        ax.axhline(control, ls="--", lw=1, color="#2b8a3e")
+        ax.axhline(baseline, ls="--", lw=1, color="#2b8a3e")
         ax.set_title(f"{name}{'  (weakest)' if is_worst else ''}",
                      fontsize=9, fontweight="bold" if is_worst else "normal",
                      color="crimson" if is_worst else "black")
@@ -120,10 +124,15 @@ def main():
     for ax in flat[len(present):]:
         ax.axis("off")
 
-    fig.suptitle(f"Probe response curves — epoch {last}\n"
-                 f"green dashed = neutral control ({control:.3f}); "
-                 f"height above it is the cost of that axis alone",
-                 fontsize=12, y=0.995)
+    fig.suptitle(
+        f"Probe response curves — epoch {last}"
+        + ("  [PAIRED]" if paired else "  [unpaired]") + "\n"
+        + ("each point is loss MINUS that same image's own control "
+           "(green = 0), so garment difficulty cancels exactly"
+           if paired else
+           f"green dashed = shared control group ({control:.3f}) — different "
+           f"garments, so this baseline carries a content bias"),
+        fontsize=12, y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.94])
     p2 = os.path.join(args.dir, f"{args.tag}_probe.png")
     plt.savefig(p2); plt.close()
@@ -152,9 +161,18 @@ def main():
     # ── Console summary ──────────────────────────────────────────────────────
     print(f"\n  best val      : {min(val):.4f} @ epoch {int(np.argmin(val))+1}")
     print(f"  probe control : {control:.4f}  (epoch {last})")
-    print("\n  axes ranked by mean loss (cost above control):")
+    kind = ("paired — vs each image's own control" if paired
+            else "UNPAIRED — vs a shared control group, content-biased")
+    print(f"\n  axes ranked by cost above baseline  ({kind}):")
     for name, m in sorted(axis_mean.items(), key=lambda kv: -kv[1]):
-        print(f"    {name:<12} {m:.4f}   (+{m - control:.4f})")
+        print(f"    {name:<12} {m - baseline:+.4f}")
+    if not paired:
+        n_neg = sum(1 for m in axis_mean.values() if m - baseline < 0)
+        if n_neg:
+            print(f"\n  WARNING: {n_neg} axes sit below baseline, which is "
+                  f"impossible for a genuine control.\n"
+                  f"  This run used the unpaired probe — regenerate with the "
+                  f"paired design for a trustworthy reading.")
 
     test_path = os.path.join(args.dir, f"{args.tag}_test.json")
     if os.path.exists(test_path):

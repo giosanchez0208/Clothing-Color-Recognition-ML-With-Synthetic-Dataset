@@ -111,7 +111,7 @@ def _make_one(task):
 
 
 def build_tasks(n_train, n_val, n_test, include_probe, probe_levels,
-                probe_per_cell, probe_control, existing):
+                probe_base, existing):
     """Assemble the full work list.
 
     Global index is unique and stable across splits, so adding a probe or test
@@ -126,13 +126,17 @@ def build_tasks(n_train, n_val, n_test, include_probe, probe_levels,
             idx += 1
 
     if include_probe:
-        plan = probe_plan(axes=AXES, n_levels=probe_levels,
-                          per_cell=probe_per_cell, n_control=probe_control)
-        for i, (axis, value) in enumerate(plan):
+        plan = probe_plan(axes=AXES, n_levels=probe_levels, n_base=probe_base)
+        # Reserve a contiguous index block: base_id b always maps to the same
+        # index, so every render of b shares one seed and therefore one garment.
+        probe_index_base = idx
+        n_base_used = max(b for b, _, _ in plan) + 1
+        for i, (base_id, axis, value) in enumerate(plan):
             fn = f"probe_{i:06d}.jpg"
             if fn not in existing:
-                tasks.append((idx, fn, "probe", True, axis, value))
-            idx += 1
+                tasks.append((probe_index_base + base_id, fn, "probe",
+                              True, axis, value))
+        idx = probe_index_base + n_base_used
     return tasks
 
 
@@ -144,8 +148,9 @@ def main():
     ap.add_argument("--n-test", type=int, default=2000,
                     help="held-out split; nothing in the training loop may touch it")
     ap.add_argument("--probe-levels", type=int, default=8)
-    ap.add_argument("--probe-per-cell", type=int, default=50)
-    ap.add_argument("--probe-control", type=int, default=200)
+    ap.add_argument("--probe-base", type=int, default=60,
+                    help="distinct base images; each is rendered at every "
+                         "axis/level plus its own control (paired design)")
     ap.add_argument("--probe-only", action="store_true")
     ap.add_argument("--no-probe", action="store_true")
     ap.add_argument("--seed", type=int, default=20260813)
@@ -179,8 +184,7 @@ def main():
         print(f"Resuming — {len(existing):,} images already recorded")
 
     tasks = build_tasks(n_train, n_val, n_test, include_probe,
-                        args.probe_levels, args.probe_per_cell,
-                        args.probe_control, existing)
+                        args.probe_levels, args.probe_base, existing)
     if not tasks:
         print("Nothing to do — dataset already complete.")
         return

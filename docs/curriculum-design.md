@@ -287,6 +287,119 @@ untestable intuition into a measurement.
 
 ---
 
+## Corrections after Run A
+
+Run A trained to convergence (80 epochs, val 0.9278, held-out test KL 0.8957 /
+top-1 53.4%) and exposed two defects in the design above. Both are recorded
+here rather than quietly patched, because the *way* they surfaced is the
+argument for having built the instrument at all.
+
+### The probe was unpaired, and its baseline was biased
+
+**Symptom.** At convergence, **six of ten axes scored *below* the control
+baseline** — i.e. adding an augmentation apparently made the model *better*
+than leaving the image alone. That is impossible for a genuine control.
+
+**Cause.** `probe_plan` gave every cell its own randomly generated garment, so
+the control group and the swept groups contained entirely different images
+(zero shared seeds). The control group happened to draw harder content:
+
+| | control | swept |
+|---|---:|---:|
+| label entropy | 0.2978 | 0.2743 |
+| solid garments | 20.5% | 24.4% |
+| colours per garment | 2.81 | 2.62 |
+
+So "loss above control" was measuring *augmentation effect + content
+difference*, and for the near-free axes the content term dominated.
+
+**Fix.** Pair the design: render the same base image at every axis and level.
+Reusing the generator `index` produces an identical garment on an identical
+background (measured difference 0.33, purely the JPEG re-encode) with only the
+augmentation varying, versus 70.97 for a different index. The reported
+quantity becomes a within-image difference, `loss(image, axis, level) −
+loss(image, own control)`, so content cancels exactly instead of averaging out
+slowly. After the fix, control and swept content match to **−0.00000** entropy.
+
+**What it changed.** Re-scoring the *same trained model*:
+
+| axis | unpaired | paired | shift |
+|---|---:|---:|---:|
+| hue | +0.2269 | **+0.3317** | +0.105 |
+| temperature | +0.1893 | **+0.2901** | +0.101 |
+| saturation | +0.1138 | **+0.2014** | +0.088 |
+| brightness | +0.1207 | +0.1535 | +0.033 |
+| blur | −0.1285 | +0.0185 | +0.147 |
+| jpeg | −0.1430 | −0.0562 | +0.087 |
+
+Every cost was understated, and **saturation and brightness swapped rank** —
+the unpaired reading had them in the wrong order. A curriculum built on it
+would have targeted the wrong axis.
+
+The paired curves also self-validate: brightness at ×1.0, saturation at ×1.0,
+hue at 0° and temperature at 0 all return **exactly 0.000**, because the
+identity value of an axis *is* the control. An unpaired design cannot produce
+that guarantee.
+
+Two axes (`jpeg` −0.056, `noise` −0.059) remain slightly negative. That is not
+a content artifact but a real distribution effect: half of all training images
+carry an extra JPEG pass or noise, so a perfectly clean image is *rarer* than a
+mildly degraded one and sits marginally out-of-distribution.
+
+## Ablation: how much regularisation was the live augmentation providing?
+
+V1 and V2 applied `ColorJitter` + `RandomColorTemperature` at load time, on top
+of the augmentation already baked into each JPEG. Two properties of that layer
+were unknown and worth separating:
+
+1. **How much of the photometric variance does it carry?** If most, then the
+   recorded metadata describes only a fraction of what the model sees, and any
+   curriculum steering by metadata is steering a disconnected wheel.
+2. **How much regularisation is it providing?** Unknown, because it had never
+   been run without.
+
+Question 1 is answerable analytically. Baked brightness fires at p=0.5 from
+TN(1.0, 0.35); live `ColorJitter(brightness=0.6)` fires *every* time from
+U(0.4, 1.6). Decomposing the variance in log space:
+
+| component | variance | share |
+|---|---:|---:|
+| baked (**recorded**) | 0.0619 | **30%** |
+| live (**unrecorded**) | 0.1461 | **70%** |
+
+Correlation between the recorded value and what the model actually sees:
+**r = 0.55, r² = 0.30**. So metadata-driven control would have operated on
+under a third of the real photometric variation.
+
+Question 2 required an ablation, which Run A provided: the same pipeline with
+the live layer removed and nothing else changed.
+
+**Result.** Train 0.6728 vs val 0.9365, with the train/val gap widening
+monotonically from 0.048 (epoch 10) to 0.264 (epoch 80) and val flat from about
+epoch 60. That is under-regularisation, and it quantifies the live layer's
+contribution: without it the model overfits progressively.
+
+Both properties are wanted. Neither configuration provides both.
+
+**Resolution.** `utils/controlled_augment.ControlledPhotometric` keeps the live
+layer but moves ownership of its intensity from torchvision to the *trainer*.
+The loop sets a strength per axis, so it knows exactly what was applied — the
+controller **is** the record, and nothing needs logging.
+
+This is also a better curriculum lever than the original plan. Weighted
+sampling would nudge the distribution indirectly, by oversampling images that
+happen to carry a large baked shift; a strength dial acts on the axis directly.
+"The probe says hue is weak" becomes "raise hue strength", and the axes
+deliberately mirror the probe axes so diagnosis and lever speak one language.
+
+Hue and saturation keep **separate probability gates**, preserving the
+independence the original pipeline destroyed.
+
+The follow-up run (A2) restores the layer under trainer control with everything
+else held fixed, isolating the regularisation effect from every other change.
+
+---
+
 ## Why each distribution has the shape it has
 
 Every axis declares an intended distribution. That declaration is not
