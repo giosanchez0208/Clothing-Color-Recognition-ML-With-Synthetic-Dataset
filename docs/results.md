@@ -357,6 +357,111 @@ are unaffected, since those come from full-split scoring rather than timing.
 
 ---
 
+## Case study: why a green sweater scored green at 2.3%
+
+A real photograph of an unambiguously pale-green sweater returned
+`yellow 52%, olive 45%, green 2.3%`. Tracing it produced the clearest single
+finding in the project.
+
+### It is not the label space
+
+The sweater's median colour is `#7f915a`, CIELAB `L*=57.6 a*=-16.1 b*=27.1`.
+Its nearest category centroid **is green** (dE 23.3, versus olive 26.9 and
+yellow 31.0). The taxonomy has the right answer.
+
+### It is not missing training data
+
+The library contains `#8b9a5f` at `L*=61.2 a*=-15.4 b*=29.2` — **dE 4.2** from
+the sweater. A near-exact match exists and is labelled green.
+
+### It is where that colour sits in the sampling distribution
+
+Sorting the 25 library greens by CIELAB hue angle, and weighting by the
+generator's actual draw probability:
+
+| | |
+|---|---:|
+| green library hue span | 117.7° – 198.2° |
+| green **centroid** hue | ~156° |
+| library greens below 135° | **2 of 25** |
+| share of green draws landing below 135° | **4.1%** |
+
+`generate_random_color` samples within a category with weights
+`(1 / mahalanobis_distance)²`, so prototypical colours dominate and colours at
+the category edge are rare. The three most central greens alone take **24.8%**
+of all draws; `#8b9a5f` takes **1.91%**.
+
+### The consequence, measured
+
+Sweeping a* on flat patches at `L*=60, b*=28`:
+
+| a* | p(green) | p(yellow) |
+|---:|---:|---:|
+| −44 | 99.1% | 0.5% |
+| −36 | **93.2%** | 6.2% |
+| −28 | 9.0% | **90.2%** |
+| −20 | 1.1% | 97.2% |
+
+The model's learned green/yellow boundary sits near **135°** of hue — not at
+the library's 117.7°. The 117–135° band is labelled green in training and
+classified yellow at inference. Fed `#8b9a5f` as a flat patch, a colour taken
+from its own green training set, the model answers **yellow 96%**.
+
+The model contradicts its own labels in that band, and does so because it saw
+that band in roughly 4% of green examples while the central cluster dominated
+the rest. **The decision boundary contracted toward the centroid.**
+
+### The irony worth stating plainly
+
+V2's confusion-aware Voronoi resampling was built to widen the gaps between
+confusable categories, and it worked: green and yellow now overlap over a
+**0.5° band containing one colour each**. The *library* has a crisp edge.
+
+But a crisp edge in the library does not produce a crisp edge in the model,
+because the centroid-weighted sampler then under-represents the region right up
+against that edge. Clean separation plus prototype-biased sampling yields a
+model whose boundary is both fuzzy and displaced inward.
+
+**Future work.** The sampler optimises for prototypical examples; boundaries are
+where the task is actually hard. Sampling uniformly within a category — or
+deliberately oversampling near boundaries — is the obvious counter-experiment,
+and it is a data-side fix rather than a modelling one, consistent with the rest
+of this project's approach.
+
+---
+
+## Colour constancy is learned, not preprocessed
+
+Training backgrounds are colour-normalised (linearise → Shades-of-Gray white
+balance → LAB exposure → CLAHE). Camera frames are not. The obvious hypothesis
+was that applying the same normalisation at inference would close part of the
+sim2real gap.
+
+Tested on the five real photographs, raw versus white-balanced input:
+
+| | raw | white-balanced |
+|---|---:|---:|
+| top-1 | 3/5 | 3/5 |
+| p(red) on the varsity jacket | 27.8% | 36.6% |
+| p(gray) on the heather tee | 45.2% | 50.9% |
+| p(blue) on the teal paisley | 23.2% | 9.8% |
+
+No improvement. Confident cases sharpen slightly, ambiguous ones degrade.
+
+That is a **positive result for the architecture**, not a failed fix. The
+augmentation pipeline exposes the model to brightness, colour-temperature,
+saturation and shadow variation during training, and the probe confirms the
+effect: temperature cost fell from +0.2903 to **+0.0327** between Run A and
+Run B, a 9× reduction. The model absorbed the colour-constancy adjustment into
+its weights instead of requiring it as a preprocessing stage.
+
+Practically: inference is a single **6.9 ms** forward pass on CPU with no
+white-balance estimation, no CLAHE, no LAB round-trip in the hot path. A
+classical pipeline would need all of those per frame, and would still need a
+rule for where to draw category boundaries.
+
+---
+
 ## Defects found and corrected
 
 Recorded in full in [`curriculum-design.md`](curriculum-design.md#corrections-after-run-a).
