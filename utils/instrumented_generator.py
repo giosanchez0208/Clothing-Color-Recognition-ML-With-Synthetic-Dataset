@@ -44,7 +44,8 @@ COLOR_CLASSES = [
 NUM_CLASSES = len(COLOR_CLASSES)
 
 # Columns written to labels.csv, in order.
-STRUCTURE_COLUMNS = ("pattern", "n_colors", "label_entropy", "fold_blend", "fold_alpha")
+STRUCTURE_COLUMNS = ("background", "pattern", "n_colors", "label_entropy",
+                     "fold_blend", "fold_alpha")
 EXTRA_COLUMNS = ("split", "seed", "probe_axis", "probe_value") + STRUCTURE_COLUMNS + META_COLUMNS
 
 
@@ -167,30 +168,42 @@ class _RecordingInnerGenerator(InnerSquareGeneratorV2):
 class InstrumentedGenerator:
     """Produces (image, label_vector, metadata) triples."""
 
-    def __init__(self, csv_path, path_to_bgs, dimensions=DEFAULT_DIMENSIONS):
+    def __init__(self, csv_path, path_to_bgs, dimensions=DEFAULT_DIMENSIONS,
+                 bg_pool=None):
+        """
+        bg_pool : optional list of background filenames to restrict sampling to.
+
+        Passing disjoint pools per split prevents background leakage: with a
+        single shared pool and sampling-with-replacement, train and val
+        inevitably reuse the same backgrounds, and since the model sees the
+        full 224x224 frame (not just the garment patch) that is a memorisation
+        channel straight into the validation set.
+        """
         self.dimensions = dimensions
         self.inner = _RecordingInnerGenerator(csv_path=csv_path, dimensions=dimensions)
         # Hoisted out of the hot loop (V2 re-listed this directory per image)
         exts = (".png", ".jpg", ".jpeg", ".bmp")
-        self.bg_files = [
-            os.path.join(path_to_bgs, f)
-            for f in os.listdir(path_to_bgs)
-            if f.lower().endswith(exts)
-        ]
+        if bg_pool is not None:
+            names = list(bg_pool)
+        else:
+            names = [f for f in os.listdir(path_to_bgs) if f.lower().endswith(exts)]
+        self.bg_names = names
+        self.bg_files = [os.path.join(path_to_bgs, f) for f in names]
         if not self.bg_files:
             raise ValueError(f"No background images found in {path_to_bgs}")
 
     def _background(self):
-        img = cv2.imread(random.choice(self.bg_files))
+        i = random.randrange(len(self.bg_files))
+        img = cv2.imread(self.bg_files[i])
         if img is None:
-            return np.full((*self.dimensions, 3), 128, dtype=np.uint8)
+            return np.full((*self.dimensions, 3), 128, dtype=np.uint8), ""
         th, tw = self.dimensions
         h, w = img.shape[:2]
         top, left = max(0, (h - th) // 2), max(0, (w - tw) // 2)
         crop = img[top:top + th, left:left + tw]
         if crop.shape[:2] != (th, tw):
             crop = cv2.resize(crop, (tw, th))
-        return crop
+        return crop, self.bg_names[i]
 
     def generate(self, index, base_seed, probe=False, axis=None, value=None):
         """Generate one sample.
@@ -205,7 +218,7 @@ class InstrumentedGenerator:
         random.seed(s)
         np.random.seed(s)
 
-        background = self._background()
+        background, bg_name = self._background()
         inner, label_pcts = self.inner.generate()
 
         composed = background.copy()
@@ -225,6 +238,7 @@ class InstrumentedGenerator:
 
         meta = dict(aug_meta)
         meta.update({
+            "background": bg_name,
             "seed": s,
             "probe_axis": axis if axis is not None else "",
             "probe_value": value if value is not None else float("nan"),
@@ -235,6 +249,49 @@ class InstrumentedGenerator:
             "fold_alpha": self.inner.last.get("fold_alpha", 0.0),
         })
         return composed, vec, meta
+
+
+DEFAULT_BG_FRACTIONS = {"train": 0.70, "val": 0.10, "test": 0.10, "probe": 0.10}
+
+
+def split_background_pool(path_to_bgs, fractions=None, seed=20260813):
+    """Partition backgrounds into four mutually disjoint pools.
+
+    Returns {split_name: [filenames]}.
+
+    Four-way rather than two-way because each split answers a different
+    question and must not be contaminated by the others:
+
+      train  the model learns these
+      val    drives LR schedule, checkpointing, early stopping and the
+             adaptive controller -- i.e. heavily optimised against
+      test   touched exactly once, at the end. This is the only number that
+             is an honest generalisation estimate, precisely because nothing
+             in the training loop ever sees it.
+      probe  the one-factor-at-a-time diagnostic. Kept separate from val so
+             the diagnostic is not correlated with the metric it explains.
+
+    Deterministic given the seed, so the partition is reproducible and can be
+    reported alongside the dataset.
+    """
+    fractions = fractions or DEFAULT_BG_FRACTIONS
+    total = sum(fractions.values())
+    if abs(total - 1.0) > 1e-6:
+        raise ValueError(f"background fractions must sum to 1.0, got {total}")
+
+    exts = (".png", ".jpg", ".jpeg", ".bmp")
+    names = sorted(f for f in os.listdir(path_to_bgs) if f.lower().endswith(exts))
+    rng = np.random.default_rng(seed)
+    order = rng.permutation(len(names))
+
+    pools, start = {}, 0
+    keys = list(fractions.keys())
+    for i, key in enumerate(keys):
+        # Last split absorbs the rounding remainder so every background is used
+        n = len(names) - start if i == len(keys) - 1 else int(len(names) * fractions[key])
+        pools[key] = [names[j] for j in order[start:start + n]]
+        start += n
+    return pools
 
 
 def probe_plan(axes=AXES, n_levels=8, per_cell=25, n_control=200):

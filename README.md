@@ -177,6 +177,25 @@ got a second pass; everything unsuffixed is shared by both versions.
 | `notebooks/10_distill_quantize_v2.ipynb` | Knowledge distillation to MobileNetV3-Small + INT8 quantization |
 | `notebooks/11_inference.ipynb` | Live webcam and video inference |
 
+### Scripts
+
+Long-running batch stages live in `scripts/` rather than notebooks — they are
+parallel, resumable, and seeded.
+
+| Script | What it does |
+|---|---|
+| `scripts/prepare_backgrounds.py` | Flatten + colour-normalise IndoorCVPR_09 backgrounds |
+| `scripts/generate_dataset.py` | Generate train + val + probe with full per-image metadata |
+| `scripts/analyze_dataset.py` | Statistical audit of a generated dataset → `reports/` |
+
+### Design documentation
+
+| Document | What it covers |
+|---|---|
+| [`docs/curriculum-design.md`](docs/curriculum-design.md) | Why the generator records its own parameters, why one dataset instead of a difficulty ladder, why the probe set is one-factor-at-a-time, why validation stays frozen, **why each augmentation distribution has the shape it has**, and the two latent bugs instrumentation exposed |
+| [`reports/dataset_report.md`](reports/dataset_report.md) | Generated audit of the current dataset — 10 checks covering integrity, coverage, distribution fidelity, independence, confounding, and leakage |
+| [`NOTICE.md`](NOTICE.md) | Third-party licences, including the AGPL boundary around the optional inference demo |
+
 ---
 
 ## What I Learned

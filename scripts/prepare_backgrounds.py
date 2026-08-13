@@ -92,13 +92,20 @@ def build_tasks(src_root, dst_root, limit=None):
             # everything is re-encoded to .jpg, so `foo.png` and `foo.jpg` in
             # different categories both collapse to `foo.jpg` and would
             # silently overwrite each other if we deduped on the input name.
+            #
+            # ...and it must be checked CASE-INSENSITIVELY. NTFS and APFS treat
+            # `IMG_0073.jpg` and `img_0073.jpg` as the same file while Python's
+            # set treats them as distinct, so a case-sensitive check silently
+            # loses one of each pair (20 of them in IndoorCVPR_09) — and loses
+            # them only on Windows/macOS, so the dataset size would differ by
+            # platform.
             stem = os.path.splitext(fn)[0]
             out_name = f"{stem}.jpg"
-            if out_name in seen:
+            if out_name.lower() in seen:
                 out_name = f"{category}_{stem}.jpg"
-            if out_name in seen:
+            if out_name.lower() in seen:
                 continue                      # give up on a double collision
-            seen.add(out_name)
+            seen.add(out_name.lower())
             dst = os.path.join(dst_root, out_name)
             if not os.path.exists(dst):
                 tasks.append((os.path.join(cat_dir, fn), dst))

@@ -44,6 +44,7 @@ if PROJECT_ROOT not in sys.path:
 from utils.instrumented_augment import AXES, META_COLUMNS
 from utils.instrumented_generator import (
     COLOR_CLASSES, InstrumentedGenerator, STRUCTURE_COLUMNS, probe_plan,
+    split_background_pool,
 )
 
 DEFAULT_OUT = os.path.join(PROJECT_ROOT, "datasets", "generated_v3")
@@ -56,22 +57,32 @@ CSV_COLUMNS = (
     + list(STRUCTURE_COLUMNS) + list(META_COLUMNS)
 )
 
-_GEN = None          # per-worker generator (built once in the initializer)
+_GENS = {}           # split -> generator, each with its own background pool
 _IMAGE_DIR = None
 _BASE_SEED = None
 _JPEG_QUALITY = 95
 
 
-def _init_worker(csv_path, bg_dir, image_dir, base_seed, jpeg_quality):
-    """Build one generator per worker process.
+def _init_worker(csv_path, bg_dir, image_dir, base_seed, jpeg_quality, pools):
+    """Build the generators once per worker process.
 
-    Windows uses spawn, so this runs fresh in each child. cv2's internal thread
-    pool is disabled: with N worker processes each spawning M threads you get
-    N*M runnable threads fighting over 16 cores, which is slower than N*1.
+    One generator per split, each restricted to its own DISJOINT background
+    pool, so no background is ever seen by two splits. Sampling with
+    replacement from a shared pool guarantees overlap, and since the model sees
+    the whole frame rather than just the garment patch, a shared background is
+    a memorisation path between splits.
+
+    Windows uses spawn, so this runs fresh in each child. cv2's thread pool is
+    disabled: N worker processes each spawning M threads gives N*M runnable
+    threads contending for 16 cores, which is slower than N*1.
     """
-    global _GEN, _IMAGE_DIR, _BASE_SEED, _JPEG_QUALITY
+    global _GENS, _IMAGE_DIR, _BASE_SEED, _JPEG_QUALITY
     cv2.setNumThreads(1)
-    _GEN = InstrumentedGenerator(csv_path=csv_path, path_to_bgs=bg_dir)
+    _GENS = {
+        split: InstrumentedGenerator(csv_path=csv_path, path_to_bgs=bg_dir,
+                                     bg_pool=pool)
+        for split, pool in pools.items()
+    }
     _IMAGE_DIR = image_dir
     _BASE_SEED = base_seed
     _JPEG_QUALITY = jpeg_quality
@@ -84,7 +95,8 @@ def _make_one(task):
     parent would make IPC the bottleneck.
     """
     index, filename, split, probe, axis, value = task
-    img, vec, meta = _GEN.generate(
+    gen = _GENS[split]
+    img, vec, meta = gen.generate(
         index=index, base_seed=_BASE_SEED, probe=probe, axis=axis, value=value,
     )
     cv2.imwrite(
@@ -98,24 +110,20 @@ def _make_one(task):
     return row
 
 
-def build_tasks(n_train, n_val, include_probe, probe_levels, probe_per_cell,
-                probe_control, existing):
+def build_tasks(n_train, n_val, n_test, include_probe, probe_levels,
+                probe_per_cell, probe_control, existing):
     """Assemble the full work list.
 
-    Global index is unique and stable across splits, so adding a probe set
-    never perturbs the seeds of the train/val images.
+    Global index is unique and stable across splits, so adding a probe or test
+    set never perturbs the seeds of the train/val images.
     """
     tasks, idx = [], 0
-    for i in range(n_train):
-        fn = f"train_{i:06d}.jpg"
-        if fn not in existing:
-            tasks.append((idx, fn, "train", False, None, None))
-        idx += 1
-    for i in range(n_val):
-        fn = f"val_{i:06d}.jpg"
-        if fn not in existing:
-            tasks.append((idx, fn, "val", False, None, None))
-        idx += 1
+    for split, count in (("train", n_train), ("val", n_val), ("test", n_test)):
+        for i in range(count):
+            fn = f"{split}_{i:06d}.jpg"
+            if fn not in existing:
+                tasks.append((idx, fn, split, False, None, None))
+            idx += 1
 
     if include_probe:
         plan = probe_plan(axes=AXES, n_levels=probe_levels,
@@ -133,13 +141,16 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--n-train", type=int, default=20000)
     ap.add_argument("--n-val", type=int, default=2000)
+    ap.add_argument("--n-test", type=int, default=2000,
+                    help="held-out split; nothing in the training loop may touch it")
     ap.add_argument("--probe-levels", type=int, default=8)
-    ap.add_argument("--probe-per-cell", type=int, default=25)
+    ap.add_argument("--probe-per-cell", type=int, default=50)
     ap.add_argument("--probe-control", type=int, default=200)
     ap.add_argument("--probe-only", action="store_true")
     ap.add_argument("--no-probe", action="store_true")
     ap.add_argument("--seed", type=int, default=20260813)
     ap.add_argument("--jpeg-quality", type=int, default=95)
+
     ap.add_argument("--workers", type=int,
                     default=max(1, min(8, (os.cpu_count() or 4) - 2)))
     ap.add_argument("--out", default=DEFAULT_OUT)
@@ -157,6 +168,7 @@ def main():
 
     n_train = 0 if args.probe_only else args.n_train
     n_val = 0 if args.probe_only else args.n_val
+    n_test = 0 if args.probe_only else args.n_test
     include_probe = not args.no_probe
 
     # Resume: skip anything already recorded in labels.csv
@@ -166,16 +178,21 @@ def main():
             existing = {r["filename"] for r in csv.DictReader(fh)}
         print(f"Resuming — {len(existing):,} images already recorded")
 
-    tasks = build_tasks(n_train, n_val, include_probe, args.probe_levels,
-                        args.probe_per_cell, args.probe_control, existing)
+    tasks = build_tasks(n_train, n_val, n_test, include_probe,
+                        args.probe_levels, args.probe_per_cell,
+                        args.probe_control, existing)
     if not tasks:
         print("Nothing to do — dataset already complete.")
         return
+
+    pools = split_background_pool(args.bgs, seed=args.seed)
 
     print(f"  output   : {args.out}")
     print(f"  seed     : {args.seed}")
     print(f"  workers  : {args.workers}")
     print(f"  to build : {len(tasks):,} images")
+    print("  bg pools : " + "  ".join(f"{k}={len(v):,}" for k, v in pools.items())
+          + "   (mutually disjoint)")
     print()
 
     write_header = not existing
@@ -191,7 +208,8 @@ def main():
         with ctx.Pool(
             processes=args.workers,
             initializer=_init_worker,
-            initargs=(args.colors, args.bgs, image_dir, args.seed, args.jpeg_quality),
+            initargs=(args.colors, args.bgs, image_dir, args.seed, args.jpeg_quality,
+                      pools),
         ) as pool:
             for row in pool.imap_unordered(_make_one, tasks, chunksize=32):
                 writer.writerow(row)
