@@ -113,18 +113,45 @@ def report(probs):
 
 # ── Backends ─────────────────────────────────────────────────────────────────
 class TorchBackend:
+    """Loads whatever architecture the checkpoint declares.
+
+    Checkpoints carry an `architecture` field precisely so this does not have
+    to be guessed: resnet50 (teacher), mobilenet_v3_small (student), or
+    mobilenet_v3_small_int8. The quantised variant must be rebuilt in FP32,
+    quantised, and only then loaded -- its state dict contains packed params
+    that have no counterpart in an unquantised module.
+    """
+
     name = "torch"
 
     def __init__(self, ckpt_path, device=None):
         import torch
+        import torch.nn as nn
         from scripts.train import create_model
+        from scripts.distill import create_student
         self.torch = torch
-        self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        ck = torch.load(ckpt_path, map_location=self.device, weights_only=False)
-        self.model = create_model()
-        self.model.load_state_dict(ck["model_state_dict"])
-        self.model.eval().to(self.device)
-        self.epoch = ck.get("epoch", -1) + 1
+        ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        arch = ck.get("architecture", "resnet50")
+        quantised = "int8" in arch
+
+        if "mobilenet" in arch:
+            model = create_student()
+            if quantised:
+                model.eval()
+                model = torch.quantization.quantize_dynamic(
+                    model, {nn.Linear}, dtype=torch.qint8)
+        else:
+            model = create_model()
+
+        model.load_state_dict(ck["model_state_dict"])
+        model.eval()
+
+        # Quantised modules are CPU-only.
+        want = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu" if quantised else want)
+        self.model = model.to(self.device)
+        self.arch = arch
+        self.epoch = ck.get("epoch", -1) + 1 if "epoch" in ck else None
         self.val = ck.get("best_val_loss")
 
     def __call__(self, batch):
@@ -235,6 +262,30 @@ def annotate(frame, person, picks, ambiguous):
     return frame
 
 
+class RollingMean:
+    """Per-frame timings jitter enough to be unreadable; average a short window."""
+
+    def __init__(self, n=15):
+        self.n, self.buf = n, []
+
+    def add(self, v):
+        self.buf.append(v)
+        if len(self.buf) > self.n:
+            self.buf.pop(0)
+        return sum(self.buf) / len(self.buf)
+
+
+def draw_stats(frame, model_ms):
+    """Inference time, top right. White text, black outline."""
+    text = f"inference: {model_ms:.2f} ms"
+    font, scale = cv2.FONT_HERSHEY_SIMPLEX, 0.6
+    (tw, th), _ = cv2.getTextSize(text, font, scale, 2)
+    org = (frame.shape[1] - tw - 12, th + 12)
+    cv2.putText(frame, text, org, font, scale, (0, 0, 0), 4, cv2.LINE_AA)
+    cv2.putText(frame, text, org, font, scale, (255, 255, 255), 2, cv2.LINE_AA)
+    return frame
+
+
 def run_frame(frame, backend, pose):
     boxes = pose(frame) if pose else []
     if not boxes:
@@ -306,9 +357,12 @@ def main():
 
     backend = make(args.backend)
     pose = None if args.no_pose else Pose()
-    if getattr(backend, "epoch", None):
-        print(f"  checkpoint: epoch {backend.epoch}, best val {backend.val:.4f}")
-    print(f"  backend   : {backend.name}   pose: {'off (centre crop)' if pose is None else 'yolo11n'}")
+    arch = getattr(backend, "arch", None)
+    if arch:
+        print(f"  model     : {arch}"
+              + (f"   (val {backend.val:.4f})" if backend.val else ""))
+    print(f"  backend   : {backend.name}   device: {getattr(backend, 'device', 'cpu')}"
+          f"   pose: {'off (centre crop)' if pose is None else 'yolo11n'}")
 
     # ── single image ─────────────────────────────────────────────────────────
     if args.image:
@@ -333,12 +387,16 @@ def main():
         sys.exit(f"ERROR: cannot open camera {args.camera_index}")
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     print("  press q to quit")
+    avg = RollingMean()
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
-            frame, _ = run_frame(frame, backend, pose)
+            frame, results = run_frame(frame, backend, pose)
+            # Sum across people: with two in frame the model genuinely runs twice.
+            model_ms = sum(r[3] for r in results) if results else 0.0
+            frame = draw_stats(frame, avg.add(model_ms))
             cv2.imshow("clothing colour", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break

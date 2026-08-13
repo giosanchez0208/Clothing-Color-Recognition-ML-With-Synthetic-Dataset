@@ -296,13 +296,27 @@ def main():
     log("  COMPRESSION + HELD-OUT TEST")
     log("=" * 68)
 
+    # Free the GPU before doing CPU inference. Training leaves the teacher and
+    # student resident on CUDA; holding that context while running CPU forwards
+    # through spawned dataloader workers is the one path train.py never takes,
+    # and it faults on Windows.
+    try:
+        del teacher, student
+    except NameError:
+        pass
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
     student_cpu = create_student()
     if os.path.exists(best_path):
         student_cpu.load_state_dict(torch.load(best_path, map_location="cpu",
                                                weights_only=False)["model_state_dict"])
     student_cpu.eval()
+    # nn.Linear only: dynamic quantisation has never supported Conv2d, so
+    # including it was a no-op (verified -- identical 5.95 -> 4.23 MB).
     int8 = torch.quantization.quantize_dynamic(
-        student_cpu, {nn.Linear, nn.Conv2d}, dtype=torch.qint8)
+        student_cpu, {nn.Linear}, dtype=torch.qint8)
 
     teacher_cpu = create_model()
     teacher_cpu.load_state_dict(t_ck["model_state_dict"])
@@ -313,17 +327,39 @@ def main():
              "student_fp32": model_size_mb(student_cpu, tmp),
              "student_int8": model_size_mb(int8, tmp)}
 
+    # Artifacts first: a fault in the CPU benchmark must not cost the models.
+    for name, m in (("student_fp32", student_cpu), ("student_int8", int8)):
+        torch.save({"model_state_dict": m.state_dict(),
+                    "architecture": ("mobilenet_v3_small_int8" if "int8" in name
+                                     else "mobilenet_v3_small"),
+                    "color_classes": COLOR_CLASSES,
+                    "teacher": os.path.basename(args.teacher)},
+                   os.path.join(DEFAULT_CKPT, f"{args.tag}_{name}.pth"))
+    onnx_path = os.path.join(DEFAULT_CKPT, f"{args.tag}_student.onnx")
+    torch.onnx.export(student_cpu, torch.randn(1, 3, 224, 224), onnx_path,
+                      input_names=["image"], output_names=["color_logits"],
+                      dynamic_axes={"image": {0: "batch"},
+                                    "color_logits": {0: "batch"}},
+                      opset_version=17, dynamo=False)
+    log(f"  exported {onnx_path} ({os.path.getsize(onnx_path)/1024/1024:.1f} MB)")
+
+    # num_workers=0: no subprocess spawn while a CUDA context has just been torn down
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
-                             num_workers=args.workers,
-                             worker_init_fn=worker_init if args.workers > 0 else None)
+                             num_workers=0)
     log("  evaluating on held-out test (CPU) ...")
     res = {}
     for name, m in (("teacher", teacher_cpu), ("student_fp32", student_cpu),
                     ("student_int8", int8)):
-        kl, top1, mae = evaluate_cpu(m, test_loader)
-        ms = benchmark(m)
-        res[name] = {"kl": kl, "top1": top1, "mae": mae,
-                     "size_mb": sizes[name], "cpu_ms": ms}
+        try:
+            kl, top1, mae = evaluate_cpu(m, test_loader)
+            ms = benchmark(m)
+            res[name] = {"kl": kl, "top1": top1, "mae": mae,
+                         "size_mb": sizes[name], "cpu_ms": ms}
+        except Exception as exc:
+            log(f"  {name}: FAILED ({type(exc).__name__}: {exc})")
+            res[name] = {"kl": float("nan"), "top1": float("nan"),
+                         "mae": float("nan"), "size_mb": sizes[name],
+                         "cpu_ms": float("nan")}
 
     log(f"\n  {'model':<16}{'KL':>9}{'top-1':>9}{'MAE':>9}{'MB':>8}{'ms':>8}")
     log("  " + "-" * 58)
@@ -339,21 +375,6 @@ def main():
               "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=1)
 
-    # ── Export ───────────────────────────────────────────────────────────────
-    for name, m in (("student_fp32", student_cpu), ("student_int8", int8)):
-        torch.save({"model_state_dict": m.state_dict(),
-                    "architecture": ("mobilenet_v3_small_int8" if "int8" in name
-                                     else "mobilenet_v3_small"),
-                    "color_classes": COLOR_CLASSES,
-                    "teacher": os.path.basename(args.teacher)},
-                   os.path.join(DEFAULT_CKPT, f"{args.tag}_{name}.pth"))
-    onnx_path = os.path.join(DEFAULT_CKPT, f"{args.tag}_student.onnx")
-    torch.onnx.export(student_cpu, torch.randn(1, 3, 224, 224), onnx_path,
-                      input_names=["image"], output_names=["color_logits"],
-                      dynamic_axes={"image": {0: "batch"},
-                                    "color_logits": {0: "batch"}},
-                      opset_version=17, dynamo=False)
-    log(f"\n  exported {onnx_path} ({os.path.getsize(onnx_path)/1024/1024:.1f} MB)")
     log("\nDone.")
     log.close()
 

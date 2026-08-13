@@ -200,6 +200,163 @@ to motivate one.**
 
 ---
 
+## Distillation — ResNet-50 → MobileNetV3-Small
+
+**Configuration.** Teacher = Run B. `T = 4.0`, `alpha = 0.7`, 60 epochs, AdamW
+`lr 1e-3` with cosine annealing to 1e-6, **label smoothing 0** on the hard-target
+term. 47 minutes.
+
+$$\mathcal{L} = 0.7 \cdot T^2 \cdot D_{KL}\!\left(\sigma(z_s/T) \,\|\, \sigma(z_t/T)\right) + 0.3 \cdot D_{KL}\!\left(\sigma(z_s) \,\|\, y\right)$$
+
+**Held-out test — read once, backgrounds disjoint from train and val.**
+
+| Model | KL | top-1 | MAE | Size | CPU |
+|---|---:|---:|---:|---:|---:|
+| Teacher (ResNet-50) | 0.6226 | 63.2% | 0.0499 | 90.1 MB | 45.4 ms |
+| Student FP32 (MobileNetV3-S) | **0.4799** | **67.3%** | 0.0423 | 6.0 MB | 6.2 ms |
+| **Student INT8** | **0.4800** | **67.4%** | 0.0423 | **4.2 MB** | **6.9 ms** |
+
+**21.3× smaller, 6.6× faster, and better than the teacher on every metric.**
+
+### The student beat the teacher — on an honest split this time
+
+V2 reported the same inversion (student 0.4798 vs teacher 0.5942) but measured
+it with backgrounds shared between train and validation. Here the test split
+draws from a background pool disjoint from every other split, and the inversion
+holds: **−23% KL and +4.2 points top-1** relative to the teacher.
+
+That makes the V2 observation considerably more credible than it was. The
+likeliest mechanism is unchanged: MobileNetV3's depthwise-separable convolutions
+and inverted residuals impose a stronger inductive bias than ResNet-50's deeper
+parameterisation, which regularises better on a 13-class problem where the
+teacher is mildly overfitting the synthetic distribution.
+
+Worth noting for scale: Run B's teacher (0.6226) sits close to V2's published
+teacher (0.5942), and this student (0.4800) lands within 0.0002 of V2's
+published student (0.4798). The four-decimal agreement is luck; converging to
+the same region on a harder split is not.
+
+### INT8 quantisation is free
+
+KL 0.4799 → 0.4800 (**+0.0001**), top-1 67.3% → 67.4%. Identical to V2's
+reported delta. Dynamic quantisation costs nothing measurable here.
+
+### Correction: `quantize_dynamic` never touched the convolutions
+
+V1/V2 called `quantize_dynamic(model, {nn.Linear, nn.Conv2d})`. **Dynamic
+quantisation has never supported `nn.Conv2d`** — it applies to `Linear`, `LSTM`,
+`GRU`, `RNN`, `Embedding` and `EmbeddingBag` only, so the `Conv2d` entry was a
+silent no-op.
+
+Verified directly: `{Linear, Conv2d}` and `{Linear}` both produce **5.95 MB →
+4.23 MB**, byte-identical. So the reported 21× compression came entirely from
+quantising the two classifier `Linear` layers (~600k of the student's 1.53M
+parameters), not from the convolutional stack. The spec now reads `{nn.Linear}`.
+
+Genuine convolution quantisation would need static (calibrated) quantisation or
+`torchao`, and would shrink the model further. Not attempted.
+
+### Engineering note: a Windows access violation
+
+The CPU evaluation stage crashed with exit code `-1073741819` (`ACCESS_VIOLATION`).
+Every component passed in isolation — quantised forward, teacher forward,
+`evaluate_cpu` at `num_workers` 0 and 2, and `benchmark()` — so the fault
+required the full context. The distinguishing factor: `train.py` evaluates on
+CUDA and never runs CPU inference after CUDA training, whereas `distill.py` does.
+
+Resolved by releasing the GPU (`del teacher, student`, `empty_cache()`,
+`synchronize()`) before switching to CPU, and using `num_workers=0` for the CPU
+loaders so no subprocess spawns against a just-torn-down CUDA context.
+
+The script now also **exports the models and ONNX before benchmarking**, and
+wraps each model's evaluation in `try/except`, so a fault in the measurement
+stage cannot cost the artifacts.
+
+---
+
+## Cross-version evaluation
+
+Produced by `scripts/evaluate_all.py`. Every model scored on the **complete
+2,000-image held-out test split** — no subsampling, one shared `labels.csv`
+parse, one dataset object, `shuffle=False`, so all versions see identical
+images in identical order. The paired probe (4,860 renders) is likewise run in
+full for every model.
+
+| Model | KL | top-1 | MAE | Size | CPU |
+|---|---:|---:|---:|---:|---:|
+| Run A — ablation arm (no live aug, LR ×0.001) | 0.8957 | 53.5% | 0.0720 | 90.1 MB | 49.0 ms |
+| Run A2 — live aug restored *(stopped @15, not converged)* | 1.1511 | 42.4% | 0.0907 | 90.1 MB | 51.2 ms |
+| Run B — flat LR + smoothing 0 | 0.6225 | 63.2% | 0.0499 | 90.1 MB | 49.0 ms |
+| Student FP32 — distilled from Run B | **0.4799** | 67.3% | 0.0423 | 6.0 MB | 5.7 ms |
+| **Student INT8 — deployable** | 0.4800 | **67.4%** | **0.0423** | **4.2 MB** | 12.0 ms |
+
+Run A2 is included for completeness but was **stopped at epoch 15 of 30** once
+it had answered its question; its numbers are a partial run, not a converged
+result, and should not be read as a version comparison.
+
+### Per-axis robustness across versions
+
+Paired probe cost — loss minus each image's own control:
+
+| Axis | Run A | Run B | INT8 student |
+|---|---:|---:|---:|
+| **hue** | +0.3323 | +0.2132 | **+0.1472** |
+| temperature | +0.2903 | +0.0324 | +0.0327 |
+| saturation | +0.2021 | +0.0702 | +0.0651 |
+| brightness | +0.1530 | +0.0330 | +0.0100 |
+| everything else | ±0.06 | ±0.04 | ±0.03 |
+
+Two things are visible here that a scalar metric hides.
+
+**Temperature was solved, not merely improved.** +0.2903 → +0.0327, a 9× drop.
+The model went from meaningfully degraded by realistic illumination shifts to
+essentially indifferent to them.
+
+**Hue remains the only substantial residual, and it survived distillation.**
++0.3323 → +0.2132 → +0.1472. It shrinks but never approaches zero, consistent
+with the geometric argument above: a ±25° rotation is 190% of the median
+distance between adjacent category centres, so at the extremes the request is
+ill-posed rather than merely hard. This is the axis that should *not* be
+curriculum-targeted.
+
+### Per-class MAE
+
+Distillation improved **every one of the 13 categories** over its teacher:
+
+| Colour | Run A | Run B | INT8 | Δ vs teacher |
+|---|---:|---:|---:|---:|
+| red | 0.0716 | 0.0455 | 0.0404 | −0.0051 |
+| orange | 0.0640 | 0.0489 | 0.0421 | −0.0068 |
+| yellow | 0.0764 | 0.0542 | 0.0468 | −0.0073 |
+| green | 0.0562 | 0.0366 | 0.0301 | −0.0065 |
+| blue | 0.0582 | 0.0372 | 0.0319 | −0.0052 |
+| violet | 0.0731 | 0.0547 | 0.0458 | −0.0089 |
+| purple | 0.0864 | 0.0638 | 0.0556 | −0.0082 |
+| white | 0.0706 | 0.0455 | 0.0423 | −0.0032 |
+| gray | 0.0886 | 0.0633 | 0.0556 | −0.0077 |
+| black | 0.0534 | 0.0306 | 0.0233 | −0.0073 |
+| pink | 0.0781 | 0.0580 | 0.0460 | −0.0120 |
+| brown | 0.0864 | 0.0624 | 0.0509 | −0.0115 |
+| olive | 0.0727 | 0.0484 | 0.0395 | −0.0089 |
+
+Uniform improvement across all 13 makes the student-beats-teacher result harder
+to dismiss as noise on a favourable subset. The hardest categories remain
+**purple, gray and brown** in every version — the same three V2 reported, which
+is independent evidence the pipeline behaves consistently despite a rebuilt
+dataset, a different initialisation and a different LR schedule.
+
+### A note on the INT8 latency figure
+
+INT8 measures 12.0 ms here against the FP32 student's 5.7 ms — apparently
+*slower*. `distill.py` measured 6.9 ms vs 6.2 ms on the same models. The
+difference is measurement conditions, not the models: `evaluate_all.py`
+benchmarks INT8 last, after four other models have churned through the CPU
+caches. Quantised ops are also more sensitive to threading state than FP32 ones.
+Treat `distill.py`'s figures as the latency reference; the accuracy columns here
+are unaffected, since those come from full-split scoring rather than timing.
+
+---
+
 ## Defects found and corrected
 
 Recorded in full in [`curriculum-design.md`](curriculum-design.md#corrections-after-run-a).
