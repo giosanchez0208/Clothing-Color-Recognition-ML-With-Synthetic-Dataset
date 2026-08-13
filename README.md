@@ -76,6 +76,84 @@ V2 adds two more augmentations: specular highlights (bright elliptical hotspots 
 
 ---
 
+## V3: A Dataset That Records Its Own Decisions
+
+V1 and V2 threw away the only information needed to diagnose a failure. Every augmentation sampled a number describing exactly how hard it made an image, used it, and discarded it:
+
+```python
+factor = _sample_truncated_normal(1.0, 0.35, 0.3, 1.8)
+return img_float * factor          # factor is now gone forever
+```
+
+Once that number is gone, the only answerable questions are *"is the model good?"* and *"on which colour?"* You cannot ask *"under which conditions?"*, because the conditions were never written down.
+
+V3 keeps them. Every image now carries **36 fields**: the 13-way soft label, the pattern, the colour count, the label entropy, the background it was composited onto, its generation seed, and the sampled parameter for all ten augmentation axes. The change is plumbing; what it buys is a different class of question.
+
+**28,200 images** across four splits — 20,000 train / 2,000 val / **2,000 test** / 4,200 probe.
+
+### Label entropy: the number that validates the premise
+
+This project's entire thesis is that colour prediction should be *distribution estimation* rather than classification. But KL divergence against a one-hot target is mathematically identical to cross-entropy. If every label were one-hot, this would be an ordinary classifier with extra steps and the architectural argument would be unsupported by its own data.
+
+Label entropy—Shannon entropy of the 13-way target, normalised to [0,1]—is what settles it. **27.3% of images are effectively one-hot; 72.9% carry genuinely multi-modal targets.** Nearly three quarters of the training signal is doing something a hard classifier structurally cannot represent.
+
+It is also a content-difficulty axis orthogonal to the photometric ones, and the ordering fell out of the generator rather than being imposed:
+
+| Pattern | Mean entropy |
+|---|---:|
+| `solid` | 0.000 |
+| `color_blocking` | 0.267 |
+| `gradient` | 0.314 |
+| `stripes` | 0.344 |
+| `chevron` | 0.378 |
+| `plaid` | 0.407 |
+| `polka_dot` | 0.455 |
+
+Entropy rather than a plain colour count, because entropy weights by **area**: a shirt that is 95% blue with one thin white stripe has two colours but near-zero entropy, and that is correct—it *is* essentially a blue shirt. The observed ceiling of 0.684 is not arbitrary either; the generator caps at six colours per garment, and log(6)/log(13) = 0.699.
+
+### Independence: why the off-diagonal must be ~0
+
+If two augmentations always fire together they are the same variable in the data, and **no quantity of images separates them**. That is not a sample-size problem, it is an identifiability problem.
+
+V1 and V2 had exactly this defect: hue and saturation lived inside one `_augment_color_jitter` call behind a single probability gate, so they fired together with correlation +1.0. "Does the model struggle with hue or with saturation?" was not merely unmeasured—it was structurally unanswerable.
+
+Independent gates fix it. Measured correlation is now **−0.006**, and the largest off-diagonal pair anywhere is **0.018** against a sampling-noise floor of 0.020.
+
+Independence also buys interaction coverage. Images average **4.39** simultaneous effects, so all combinations appear in proportion—dark+blurry, dark+sharp, bright+blurry, bright+sharp. Correlated firing would confine the model to the diagonal while the real world produces the rest.
+
+### The audit
+
+`scripts/analyze_dataset.py` runs eleven checks, each stating what would constitute a defect. The dataset passes all eleven.
+
+| Check | Result |
+|---|---|
+| Colour/augmentation confounding | max \|r\| = **0.037** across 10×13 pairs |
+| Augmentation independence | max \|r\| = **0.018** (noise floor 0.020) |
+| Background isolation | **0 shared** across all 6 split pairs |
+| Label balance | 1.15× dominance ratio |
+| Pattern mix vs design weights | χ² p = 0.465 |
+| Parameter fidelity | every analytic axis passes KS |
+
+The confounding check is the one that matters most. Augmentation is applied *after* the garment colour is chosen, so the two must be independent. If blue garments were systematically darker, the model could use exposure as a proxy for colour—scoring well on this benchmark while learning nothing that transfers. A leak there would invalidate the dataset rather than merely degrade it.
+
+Two design decisions exist purely to keep the numbers honest:
+
+**Backgrounds are partitioned, not shared.** The model sees the full 224×224 frame, not just the garment patch, so a room appearing in two splits is a memorisation channel. Train, val, test and probe draw from disjoint pools of 8,946 / 1,102 / 1,075 / 1,403 backgrounds. Distributional parity is not sufficient here—identical distributions and disjoint samples are different properties, and only the second makes a held-out score meaningful.
+
+**There is a test split, and nothing in the training loop reads it.** Validation drives the LR scheduler, checkpoint selection, early stopping *and* the adaptive controller—four channels of optimisation pressure on the same 2,000 images. Any val number therefore carries an optimistic bias, V2's published 0.5942 included. The test split is the only figure reportable without that caveat.
+
+### The probe set
+
+Diagnosis needs more than metadata. In the training distribution ~4.4 effects compound per image, so filtering to "dark images" also filters to blurred, shadowed, hue-shifted ones—every slice is confounded and nothing is attributable.
+
+So a separate **one-factor-at-a-time** set: sweep one axis across its range, hold every other axis neutral, 50 images per cell across 8 levels and 10 axes, plus a 200-image neutral control. Because only one thing varies, the output is a **response curve per axis**—loss as a function of brightness, of hue shift, of JPEG quality—measured against a common baseline. That reveals not just *which* axis is weak but *where on it* and *how sharply*, which a scalar val loss cannot.
+
+![Augmentation axes swept in isolation](reports/showcase/augmentation_axes.png)
+
+Full reasoning, including why each distribution has the shape it has and the two latent bugs instrumentation exposed, is in [`docs/curriculum-design.md`](docs/curriculum-design.md).
+
+---
+
 ## Architecture
 
 ### Backbone and Head
