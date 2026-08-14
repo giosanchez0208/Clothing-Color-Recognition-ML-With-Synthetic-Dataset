@@ -9,11 +9,11 @@ Checks
 ------
  1. Integrity          rows vs files, label simplex, seed uniqueness
  2. Label coverage     per-class mass, dominance balance, entropy
- 3. Structure          pattern mix vs design weights, colour counts
+ 3. Structure          pattern mix vs design weights, color counts
  4. Fire rates         observed vs designed probability, binomial CI
  5. Parameter fidelity KS test of each axis against its intended distribution
  6. Independence       pairwise correlation of augmentation firing
- 7. Confounds          augmentation x colour leakage  (the dangerous one)
+ 7. Confounds          augmentation x color leakage  (the dangerous one)
  8. Train/val parity   KS test per axis between splits
  9. Probe validity     cell coverage, isolation, control neutrality
 
@@ -80,7 +80,7 @@ def holm_bonferroni(pvals, alpha=0.01):
     error rate while staying more powerful than plain Bonferroni.
 
     This is the same multiple-comparisons discipline the curriculum needs when
-    picking a "weakest axis" out of ten — see docs/curriculum-design.md.
+    picking a "weakest axis" out of ten. See docs/curriculum-design.md.
 
     Returns (any_rejected, cutoff) where a p-value counts as a real difference
     iff p <= cutoff. cutoff is 0.0 when nothing survives correction.
@@ -92,7 +92,7 @@ def holm_bonferroni(pvals, alpha=0.01):
     n_rejected = 0
     for i, p in enumerate(ordered):
         # Step down: reject while p(i) clears its own shrinking threshold, and
-        # STOP at the first failure — everything after it is retained too.
+        # STOP at the first failure, since everything after it is retained too.
         if p <= alpha / (m - i):
             n_rejected += 1
         else:
@@ -124,7 +124,7 @@ class Report:
     def verdict(self, name, ok, detail=""):
         self.verdicts.append((name, ok, detail))
         mark = "**PASS**" if ok else "**FAIL**"
-        self.p(f"{mark} — {detail}" if detail else mark)
+        self.p(f"{mark}: {detail}" if detail else mark)
 
     def fig(self, path, caption):
         rel = os.path.relpath(path, os.path.join(PROJECT_ROOT, "reports"))
@@ -147,7 +147,7 @@ def main():
     csv_path = os.path.join(args.data, "labels.csv")
     img_dir = os.path.join(args.data, "images")
     if not os.path.exists(csv_path):
-        sys.exit(f"ERROR: {csv_path} not found — run generate_dataset.py first")
+        sys.exit(f"ERROR: {csv_path} not found. Run generate_dataset.py first")
 
     # low_memory=False: probe_axis is blank for train/val rows and a string for
     # probe rows, which trips pandas' chunked type inference.
@@ -157,10 +157,10 @@ def main():
 
     R = Report()
     R.lines.append("# Synthetic Dataset Audit\n")
-    R.p(f"`{os.path.relpath(args.data, PROJECT_ROOT)}` — **{len(df):,} images**, "
+    R.p(f"`{os.path.relpath(args.data, PROJECT_ROOT)}`: **{len(df):,} images**, "
         f"{len(df.columns)} recorded fields per image.\n")
     R.p("Every section states what it tests and what a failure would mean. "
-        "Verdicts are summarised at the end.\n")
+        "Verdicts are summarized at the end.\n")
 
     plt.rcParams.update({"figure.dpi": 120, "font.size": 9,
                          "axes.grid": True, "grid.alpha": 0.25})
@@ -174,38 +174,57 @@ def main():
     n_files = len(os.listdir(img_dir)) if os.path.isdir(img_dir) else 0
     sums = df[COLOR_CLASSES].sum(axis=1)
     simplex_ok = bool(((sums - 1.0).abs() < 1e-4).all())
-    seeds_ok = bool(df["seed"].nunique() == len(df))
     files_ok = n_files == len(df)
     names_ok = bool(df["filename"].nunique() == len(df))
     neg_ok = bool((df[COLOR_CLASSES] >= -1e-9).all().all())
 
+    # Seeds identify an image everywhere except the probe split, where the
+    # paired design re-renders each base at every (axis, level) cell on purpose.
+    # Testing global uniqueness there would flag the pairing itself. The
+    # invariant that still has teeth: every base rendered the same number of
+    # times, with exactly one own-control render each. An uneven grid, which is
+    # what a half-finished probe run looks like, still fails.
+    probe = df[df["split"] == "probe"]
+    others = df[df["split"] != "probe"]
+    seeds_ok = bool(others["seed"].nunique() == len(others))
+    if len(probe):
+        per_base = probe.groupby("seed").size()
+        n_ctrl = int(probe["probe_axis"].isna().sum())
+        paired_ok = bool(per_base.nunique() == 1 and n_ctrl == len(per_base))
+        probe_note = (f"{len(per_base)} bases x {int(per_base.iloc[0])} renders, "
+                      f"{n_ctrl} own-controls")
+    else:
+        paired_ok, probe_note = True, "no probe split"
+
     R.table(["Check", "Result", "Status"], [
-        ["Rows in labels.csv", f"{len(df):,}", "—"],
+        ["Rows in labels.csv", f"{len(df):,}", "n/a"],
         ["Files on disk", f"{n_files:,}", "OK" if files_ok else "MISMATCH"],
         ["Unique filenames", f"{df['filename'].nunique():,}", "OK" if names_ok else "DUPES"],
-        ["Unique seeds", f"{df['seed'].nunique():,}", "OK" if seeds_ok else "COLLISION"],
+        ["Unique seeds (train/val/test)", f"{others['seed'].nunique():,} of {len(others):,}",
+         "OK" if seeds_ok else "COLLISION"],
+        ["Probe pairing grid", probe_note, "OK" if paired_ok else "UNEVEN"],
         ["Labels sum to 1.0", f"[{sums.min():.6f}, {sums.max():.6f}]",
          "OK" if simplex_ok else "INVALID"],
         ["Labels non-negative", "yes" if neg_ok else "no", "OK" if neg_ok else "INVALID"],
     ])
     R.table(["Split", "Count"], [[k, f"{v:,}"] for k, v in df["split"].value_counts().items()])
-    R.verdict("integrity", all([files_ok, names_ok, seeds_ok, simplex_ok, neg_ok]),
-              "manifest, files, seeds and label simplex all consistent"
-              if all([files_ok, names_ok, seeds_ok, simplex_ok, neg_ok])
-              else "one or more integrity checks failed")
+    ok = all([files_ok, names_ok, seeds_ok, paired_ok, simplex_ok, neg_ok])
+    R.verdict("integrity", ok,
+              "manifest, files, seeds, probe pairing and label simplex all consistent"
+              if ok else "one or more integrity checks failed")
 
     # ── 2. Label coverage ────────────────────────────────────────────────────
     R.h("2. Label space coverage")
     R.p("*Categories are sampled uniformly by design, so dominant-class counts "
         "should be roughly balanced. Heavy imbalance would bias the model "
-        "toward over-represented colours regardless of the loss function.*\n")
+        "toward over-represented colors regardless of the loss function.*\n")
 
     mean_mass = tv[COLOR_CLASSES].mean()
     dominant = tv[COLOR_CLASSES].idxmax(axis=1).value_counts().reindex(COLOR_CLASSES, fill_value=0)
     chi = stats.chisquare(dominant.values)
     balance = dominant.max() / max(dominant.min(), 1)
 
-    R.table(["Colour", "Mean mass", "Dominant count", "Share"],
+    R.table(["Color", "Mean mass", "Dominant count", "Share"],
             [[c, f"{mean_mass[c]:.4f}", f"{dominant[c]:,}", f"{dominant[c]/len(tv):.1%}"]
              for c in COLOR_CLASSES])
     R.p(f"\nUniform reference mass = {1/len(COLOR_CLASSES):.4f}. "
@@ -215,7 +234,7 @@ def main():
     ent = tv["label_entropy"]
     pure = float((ent < 0.01).mean())
     R.p(f"Label entropy: mean **{ent.mean():.3f}**, median {ent.median():.3f}, "
-        f"max {ent.max():.3f}. Effectively one-hot (H<0.01): **{pure:.1%}** — "
+        f"max {ent.max():.3f}. Effectively one-hot (H<0.01): **{pure:.1%}**, so "
         f"the remaining {1-pure:.1%} are genuinely multi-modal targets, which are "
         "the samples that exercise the KL objective rather than behaving like "
         "hard labels.\n")
@@ -253,7 +272,7 @@ def main():
               f"pattern frequencies consistent with design weights (p={chi_p.pvalue:.3f})")
 
     by_pat = tv.groupby("pattern")["label_entropy"].agg(["mean", "count"]).sort_values("mean")
-    R.p("\nEntropy by pattern — a sanity check that multi-colour patterns really "
+    R.p("\nEntropy by pattern, a sanity check that multi-color patterns really "
         "do produce multi-modal labels:\n")
     R.table(["Pattern", "Mean entropy", "n"],
             [[i, f"{r['mean']:.3f}", f"{int(r['count']):,}"] for i, r in by_pat.iterrows()])
@@ -288,7 +307,7 @@ def main():
 
     # ── 5. Parameter fidelity ────────────────────────────────────────────────
     R.h("5. Parameter distribution fidelity")
-    R.p("*Firing at the right rate is not enough — the sampled values must also "
+    R.p("*Firing at the right rate is not enough. The sampled values must also "
         "follow the intended distribution. A Kolmogorov-Smirnov test against the "
         "analytic reference catches a sampler that fires correctly but draws from "
         "the wrong shape (e.g. uniform where truncated-normal was intended).*\n")
@@ -299,7 +318,7 @@ def main():
         "are roughly in focus and focus error has a hard floor at zero, so "
         "`blur` is a half-normal. But there is no privileged illuminant across "
         "many rooms, no privileged compression setting, and no privileged hue "
-        "offset for what is purely a regulariser — so `temperature`, `jpeg`, "
+        "offset for what is purely a regularizer, so `temperature`, `jpeg`, "
         "`hue`, `shadow`, `noise`, `specular` and `vignette` are uniform. "
         "Uniform brightness would assert that a wildly underexposed frame is as "
         "likely as a correct one, which is false about cameras and wastes model "
@@ -308,10 +327,11 @@ def main():
     R.p("**Reading the figure below.** Two axes can show spikes for entirely "
         "different reasons. `blur` has a *real* point mass: `clip()` maps every "
         "draw below 0.1 onto exactly 0.1 rather than resampling, so ~15.8% of "
-        "blur values are identical. `jpeg` shows *no* real structure — it takes "
+        "blur values are identical. `jpeg` shows *no* real structure, since it takes "
         "46 integer values, and any bin count that is not a multiple of that "
         "produces moiré banding. Bins are now allocated per-value for discrete "
-        "axes. A spiky histogram is a question, not an answer.\n")
+        "axes. Treat a spiky histogram as a question; separating a sampler "
+        "defect from a rendering artifact takes a test on the values.\n")
 
     refs = _reference_dists()
     rows, ks_ok = [], True
@@ -321,7 +341,7 @@ def main():
             continue
         if dist is None:
             rows.append([col.replace("aug_", ""), desc, f"{len(vals):,}",
-                         f"[{vals.min():.4g}, {vals.max():.4g}]", "—", "not analytic"])
+                         f"[{vals.min():.4g}, {vals.max():.4g}]", "n/a", "not analytic"])
             continue
         ks = stats.kstest(vals, dist.cdf)
         ok = ks.pvalue > 0.01
@@ -331,7 +351,7 @@ def main():
                      f"{ks.pvalue:.3f}", "OK" if ok else "DEVIATES"])
     R.table(["Axis", "Intended distribution", "n", "Observed range", "KS p", "Status"], rows)
     R.p("\n*KS p > 0.01 means the sampled values are consistent with the intended "
-        "distribution. Low p on a large sample can reflect discretisation rather "
+        "distribution. Low p on a large sample can reflect discretization rather "
         "than a real defect.*\n")
     R.verdict("parameter fidelity", ks_ok,
               "sampled values match their intended distributions"
@@ -348,7 +368,7 @@ def main():
             vals = tv[col].dropna()
             # Discrete axes need one bin per value. JPEG quality takes 46
             # integers; forcing them into 40 bins makes every ~8th bin swallow
-            # two integers and show up at 2x height — a moiré artifact that
+            # two integers and show up at 2x height, a moiré artifact that
             # looks exactly like periodic structure in the sampler but is
             # purely a binning choice.
             uniq = vals.nunique()
@@ -369,7 +389,7 @@ def main():
     # ── 6. Independence ──────────────────────────────────────────────────────
     R.h("6. Augmentation independence")
     R.p("*Effects are meant to fire independently. Correlated firing makes axes "
-        "mutually unattributable — if two always co-occur, no analysis can tell "
+        "mutually unattributable. If two always co-occur, no analysis can tell "
         "which one caused a failure. This is the check that catches the V1/V2 bug "
         "where hue and saturation shared a single gate (correlation +1.0).*\n")
 
@@ -385,7 +405,7 @@ def main():
     R.p(f"Largest off-diagonal correlation: **{max_abs:.4f}** "
         f"({corr.index[i]} vs {corr.columns[j]}). "
         f"Noise threshold at n={n:,} is ~{thresh:.4f}.\n")
-    R.p(f"**hue vs saturation = {hue_sat:+.4f}** — in V1/V2 this was structurally "
+    R.p(f"**hue vs saturation = {hue_sat:+.4f}**. In V1/V2 this was structurally "
         f"+1.000 because both sat behind one probability gate. They are now "
         f"independently sampled, which is what makes per-axis attribution possible "
         f"at all.\n")
@@ -412,11 +432,11 @@ def main():
             [[k, f"{v:,}", f"{v/len(tv):.1%}"] for k, v in counts.items()])
 
     # ── 7. Confounds ─────────────────────────────────────────────────────────
-    R.h("7. Colour/augmentation confounding")
+    R.h("7. Color/augmentation confounding")
     R.p("*The most consequential check here. Augmentation is applied after the "
-        "garment colour is chosen, so the two must be statistically independent. "
+        "garment color is chosen, so the two must be statistically independent. "
         "If, say, blue garments were systematically darker, the model could reach "
-        "the right answer using brightness as a proxy for colour — scoring well on "
+        "the right answer using brightness as a proxy for color, scoring well on "
         "this dataset while learning something that does not transfer. A leak here "
         "would invalidate the benchmark, not merely degrade it.*\n")
 
@@ -434,27 +454,27 @@ def main():
         leak_rows.append([col.replace("aug_", ""), best_c, f"{best_r:+.4f}"])
         if abs(best_r) > abs(max_leak):
             max_leak, worst = best_r, (col.replace("aug_", ""), best_c)
-    R.table(["Axis", "Most correlated colour", "Pearson r"], leak_rows)
+    R.table(["Axis", "Most correlated color", "Pearson r"], leak_rows)
     if not leak_rows:
         # Never report a pass for a test that did not run. An untested check
         # silently reporting max|r| = 0.0000 is worse than an outright failure.
-        R.p("\n**INCONCLUSIVE** — no axis had the >=200 samples needed for a "
+        R.p("\n**INCONCLUSIVE**: no axis had the >=200 samples needed for a "
             "meaningful correlation estimate. This check did not run.\n")
-        R.verdict("no colour confound", False,
-                  "INCONCLUSIVE — insufficient samples to test for confounding")
+        R.verdict("no color confound", False,
+                  "INCONCLUSIVE: insufficient samples to test for confounding")
     else:
         R.p(f"\nStrongest leak across all {len(leak_rows)}x{len(COLOR_CLASSES)} pairs: "
             f"**r = {max_leak:+.4f}** ({worst[0]} vs {worst[1]}). "
             f"Noise floor at n={n:,} is ~{thresh:.4f}.\n")
-        R.verdict("no colour confound", abs(max_leak) < 0.05,
-                  f"max |r| = {abs(max_leak):.4f} — augmentation carries no usable "
-                  f"information about garment colour")
+        R.verdict("no color confound", abs(max_leak) < 0.05,
+                  f"max |r| = {abs(max_leak):.4f}, so augmentation carries no usable "
+                  f"information about garment color")
 
     # ── 8. Train/val parity ──────────────────────────────────────────────────
     R.h("8. Train/validation parity")
     R.p("*Validation must be drawn from the same distribution as training, "
         "otherwise val loss measures distribution shift rather than "
-        "generalisation, and is not comparable across runs.*\n")
+        "generalization, and is not comparable across runs.*\n")
 
     tr = df[df["split"] == "train"]
     va = df[df["split"] == "val"]
@@ -478,16 +498,16 @@ def main():
     R.h("8b. Background isolation", level=3)
     R.p("*Distributional parity is not sufficient. The model sees the full "
         "224x224 frame, not just the garment patch, so a background appearing "
-        "in both train and validation is a memorisation channel — the model can "
-        "recognise the room rather than generalise the colour. Backgrounds must "
+        "in both train and validation is a memorization channel. The model can "
+        "recognize the room rather than generalize the color. Backgrounds must "
         "be partitioned, not merely sampled identically.*\n")
 
     if "background" not in df.columns:
-        R.p("**INCONCLUSIVE** — this dataset predates background provenance "
+        R.p("**INCONCLUSIVE**: this dataset predates background provenance "
             "tracking, so leakage cannot be measured. Regenerate to enable "
             "this check.\n")
         R.verdict("background isolation", False,
-                  "INCONCLUSIVE — no `background` column recorded")
+                  "INCONCLUSIVE: no `background` column recorded")
     else:
         import itertools
         present = [s for s in ("train", "val", "test", "probe")
@@ -505,19 +525,19 @@ def main():
             n_ov = len(bg[a] & bg[b])
             clean &= n_ov == 0
             pair_rows.append([f"{a} n {b}", f"{n_ov}", "OK" if n_ov == 0 else "LEAK"])
-        R.p("\nPairwise background overlap — every cell must be zero:\n")
+        R.p("\nPairwise background overlap, where every cell must be zero:\n")
         R.table(["Pair", "Shared backgrounds", "Status"], pair_rows)
         R.verdict("background isolation", clean,
                   f"all {len(pair_rows)} split pairs draw from disjoint background "
-                  f"pools — no room is ever seen by two splits" if clean
+                  f"pools, so no room is ever seen by two splits" if clean
                   else "backgrounds leak between splits")
 
     # ── 8c. Held-out test set ────────────────────────────────────────────────
     R.h("8c. Held-out test set", level=3)
-    R.p("*Validation is not a clean generalisation estimate here: it drives the "
+    R.p("*Validation is not a clean generalization estimate here: it drives the "
         "LR scheduler, checkpoint selection, early stopping AND the adaptive "
         "controller (class weights, augmentation strength, label smoothing). "
-        "Four channels of optimisation pressure on the same 2,000 images. A "
+        "Four channels of optimization pressure on the same 2,000 images. A "
         "separate split that nothing in the training loop ever reads is the "
         "only number that can be reported without that caveat.*\n")
 
@@ -566,7 +586,7 @@ def main():
         ["Control images", f"{len(ctrl):,}", "OK" if len(ctrl) else "MISSING"],
         ["Control has zero augmentation", "yes" if ctrl_ok else "no",
          "OK" if ctrl_ok else "FAIL"],
-        ["Swept images", f"{len(swept):,}", "—"],
+        ["Swept images", f"{len(swept):,}", "n/a"],
         ["Every swept image isolates 1 axis", "yes" if iso_ok else "no",
          "OK" if iso_ok else "FAIL"],
         ["All 10 axes covered", "yes" if axes_ok else "no", "OK" if axes_ok else "FAIL"],
@@ -617,10 +637,10 @@ def main():
     R.p(f"\n**{n_pass} of {len(R.verdicts)} checks passed.**\n")
     if n_pass == len(R.verdicts):
         R.p("The dataset is internally consistent, matches its design "
-            "specification, and carries no measurable colour/augmentation "
+            "specification, and carries no measurable color/augmentation "
             "confound. It is suitable as a benchmark.\n")
     else:
-        R.p("One or more checks failed — see the sections above before "
+        R.p("One or more checks failed. See the sections above before "
             "training on this dataset.\n")
 
     out_md = os.path.join(args.out, "dataset_report.md")

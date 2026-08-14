@@ -125,12 +125,12 @@ def main():
         ax.axis("off")
 
     fig.suptitle(
-        f"Probe response curves — epoch {last}"
+        f"Probe response curves, epoch {last}"
         + ("  [PAIRED]" if paired else "  [unpaired]") + "\n"
         + ("each point is loss MINUS that same image's own control "
            "(green = 0), so garment difficulty cancels exactly"
            if paired else
-           f"green dashed = shared control group ({control:.3f}) — different "
+           f"green dashed = shared control group ({control:.3f}), drawn from different "
            f"garments, so this baseline carries a content bias"),
         fontsize=12, y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.94])
@@ -161,8 +161,8 @@ def main():
     # ── Console summary ──────────────────────────────────────────────────────
     print(f"\n  best val      : {min(val):.4f} @ epoch {int(np.argmin(val))+1}")
     print(f"  probe control : {control:.4f}  (epoch {last})")
-    kind = ("paired — vs each image's own control" if paired
-            else "UNPAIRED — vs a shared control group, content-biased")
+    kind = ("paired, vs each image's own control" if paired
+            else "UNPAIRED, vs a shared control group, content-biased")
     print(f"\n  axes ranked by cost above baseline  ({kind}):")
     for name, m in sorted(axis_mean.items(), key=lambda kv: -kv[1]):
         print(f"    {name:<12} {m - baseline:+.4f}")
@@ -171,7 +171,7 @@ def main():
         if n_neg:
             print(f"\n  WARNING: {n_neg} axes sit below baseline, which is "
                   f"impossible for a genuine control.\n"
-                  f"  This run used the unpaired probe — regenerate with the "
+                  f"  This run used the unpaired probe. Regenerate with the "
                   f"paired design for a trustworthy reading.")
 
     test_path = os.path.join(args.dir, f"{args.tag}_test.json")
@@ -181,7 +181,7 @@ def main():
         print(f"\n  HELD-OUT TEST: KL {t['test_kl']:.4f} | top-1 {t['test_top1']:.1%} "
               f"| MAE {t['test_mae']:.4f}  (n={t['n_test']:,})")
     else:
-        print("\n  (test set not evaluated yet — written when training finishes)")
+        print("\n  (test set not evaluated yet, written when training finishes)")
 
 
 if __name__ == "__main__":

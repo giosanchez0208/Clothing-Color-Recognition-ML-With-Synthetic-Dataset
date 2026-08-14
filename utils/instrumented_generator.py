@@ -1,10 +1,10 @@
 # =============================================================================
-# instrumented_generator.py — dataset generation that records its own decisions
+# instrumented_generator.py: dataset generation that records its own decisions
 # =============================================================================
 # Differences from DatasetGeneratorV2:
 #
 #   1. METADATA. Every image emits the parameters that produced it (pattern,
-#      colour count, label entropy, and every augmentation value). Without this
+#      color count, label entropy, and every augmentation value). Without this
 #      a failure-mode diagnosis is impossible: you can see that some images are
 #      harder, never which axis made them hard.
 #
@@ -14,7 +14,7 @@
 #      the original 22k set can never be recovered exactly.
 #
 #   3. CACHED BACKGROUND LISTING. V2's OuterSquareGenerator called os.listdir()
-#      inside generate() — once per image, over ~15.6k files. Hoisting it out
+#      inside generate(), once per image, over ~15.6k files. Hoisting it out
 #      removes ~343M redundant filename operations across a 22k run.
 #
 #   4. PARALLEL. Generation is embarrassingly parallel; per-image seeding keeps
@@ -55,9 +55,9 @@ def seed_for(base_seed, index):
 
 
 def label_entropy(label_vec):
-    """Shannon entropy of the soft label, normalised to [0, 1].
+    """Shannon entropy of the soft label, normalized to [0, 1].
 
-    A free difficulty signal: a solid shirt is one-hot (0.0), a four-colour
+    A free difficulty signal: a solid shirt is one-hot (0.0), a four-color
     plaid spreads mass across categories (towards 1.0). Orthogonal to the
     photometric axes, which is exactly why it is worth recording separately.
     """
@@ -126,7 +126,7 @@ class _RecordingInnerGenerator(InnerSquareGeneratorV2):
         from .dataset_utils import _sample_texture_opacity, generate_synthetic_clothing_folds
 
         # Seed drawn from the (already-seeded) global RNG so the fold texture
-        # is reproducible. Passing seed=None here silently breaks determinism —
+        # is reproducible. Passing seed=None here silently breaks determinism,
         # _fbm_perlin's default_rng(None) ignores np.random.seed().
         texture = generate_synthetic_clothing_folds(
             seed=int(np.random.randint(0, 2 ** 31 - 1)),
@@ -176,7 +176,7 @@ class InstrumentedGenerator:
         Passing disjoint pools per split prevents background leakage: with a
         single shared pool and sampling-with-replacement, train and val
         inevitably reuse the same backgrounds, and since the model sees the
-        full 224x224 frame (not just the garment patch) that is a memorisation
+        full 224x224 frame (not just the garment patch) that is a memorization
         channel straight into the validation set.
         """
         self.dimensions = dimensions
@@ -211,7 +211,7 @@ class InstrumentedGenerator:
         probe=False -> stochastic augmentation (the training distribution)
         probe=True  -> exactly one axis at `value`, every other axis neutral.
                        axis=None with probe=True is the neutral control group,
-                       which must be distinguishable from "no axis requested" —
+                       which must be distinguishable from "no axis requested",
                        hence an explicit flag rather than inferring from axis.
         """
         s = seed_for(base_seed, index)
@@ -264,9 +264,9 @@ def split_background_pool(path_to_bgs, fractions=None, seed=20260813):
 
       train  the model learns these
       val    drives LR schedule, checkpointing, early stopping and the
-             adaptive controller -- i.e. heavily optimised against
+             adaptive controller -- i.e. heavily optimized against
       test   touched exactly once, at the end. This is the only number that
-             is an honest generalisation estimate, precisely because nothing
+             is an honest generalization estimate, precisely because nothing
              in the training loop ever sees it.
       probe  the one-factor-at-a-time diagnostic. Kept separate from val so
              the diagnostic is not correlated with the metric it explains.
@@ -299,7 +299,7 @@ def probe_plan(axes=AXES, n_levels=8, n_base=60):
 
     Returns [(base_id, axis, value), ...]. Every entry sharing a base_id is
     rendered from the same seed, so it depicts the SAME garment on the SAME
-    background — only the augmentation differs. `axis=None` is that base
+    background, with only the augmentation differing. `axis=None` is that base
     image's own untouched control.
 
     Why paired: the previous unpaired design gave every cell its own random
@@ -307,7 +307,7 @@ def probe_plan(axes=AXES, n_levels=8, n_base=60):
     whatever the content difficulty happened to be. Measured on the real run,
     the control group drew harder content than the swept groups (label entropy
     0.298 vs 0.274, 20.5% solid vs 24.4%) and six genuinely-free axes finished
-    *below* the control baseline as a result — an impossible ordering that was
+    *below* the control baseline as a result, an impossible ordering that was
     purely a sampling artifact.
 
     Pairing removes it: loss(image, axis, level) - loss(image, control) is a

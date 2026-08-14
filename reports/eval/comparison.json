@@ -20,7 +20,7 @@
   ],
   "n": 2000,
   "arch": "resnet50",
-  "desc": "Run A \u2014 ablation arm (no live aug, LR \u00d70.001)",
+  "desc": "Run A: ablation arm (no live aug, LR x0.001)",
   "size_mb": 90.06301975250244,
   "probe": {
    "brightness": 0.15302305348450318,
@@ -35,7 +35,7 @@
    "vignette": -0.01165530709840823
   },
   "probe_control": 0.6419373750686646,
-  "cpu_ms": 48.96151500001906
+  "cpu_ms": 67.64777999997023
  },
  "runA2": {
   "kl": 1.1511035556793212,
@@ -58,7 +58,7 @@
   ],
   "n": 2000,
   "arch": "resnet50",
-  "desc": "Run A2 \u2014 live aug restored (stopped @15, NOT converged)",
+  "desc": "Run A2: live aug restored (stopped @15, NOT converged)",
   "size_mb": 90.06301975250244,
   "probe": {
    "brightness": 0.086795708630234,
@@ -73,7 +73,7 @@
    "vignette": 0.026873920509387972
   },
   "probe_control": 0.9463155269622803,
-  "cpu_ms": 51.187560000016674
+  "cpu_ms": 68.13904999980878
  },
  "runB": {
   "kl": 0.6224663846492767,
@@ -96,7 +96,7 @@
   ],
   "n": 2000,
   "arch": "resnet50",
-  "desc": "Run B \u2014 +flat LR, smoothing 0",
+  "desc": "Run B: flat LR, smoothing 0",
   "size_mb": 90.06301975250244,
   "probe": {
    "brightness": 0.03301536344224587,
@@ -111,7 +111,7 @@
    "vignette": -0.03540515061467886
   },
   "probe_control": 0.42657530307769775,
-  "cpu_ms": 49.037684999984776
+  "cpu_ms": 70.34334999989369
  },
  "student": {
   "kl": 0.4798560118675232,
@@ -134,7 +134,7 @@
   ],
   "n": 2000,
   "arch": "mobilenet_v3_small",
-  "desc": "Student FP32 \u2014 distilled from Run B",
+  "desc": "Student FP32: distilled from Run B",
   "size_mb": 5.9577531814575195,
   "probe": {
    "brightness": 0.009443592942261603,
@@ -149,7 +149,7 @@
    "vignette": -0.015540384571067989
   },
   "probe_control": 0.3788735568523407,
-  "cpu_ms": 5.732477499986999
+  "cpu_ms": 10.782437499801745
  },
  "int8": {
   "kl": 0.48004717779159545,
@@ -172,7 +172,7 @@
   ],
   "n": 2000,
   "arch": "mobilenet_v3_small_int8",
-  "desc": "Student INT8 \u2014 deployable",
+  "desc": "Student INT8: deployable",
   "size_mb": 4.23037052154541,
   "probe": {
    "brightness": 0.010037804349849466,
@@ -187,6 +187,6 @@
    "vignette": -0.0154359404114075
   },
   "probe_control": 0.37826210260391235,
-  "cpu_ms": 11.97519000002103
+  "cpu_ms": 11.513009999907808
  }
 }

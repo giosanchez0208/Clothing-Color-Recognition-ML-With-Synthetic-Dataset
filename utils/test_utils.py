@@ -17,7 +17,7 @@ NUM_CLASSES = len(COLOR_CLASSES)
 IMG_SIZE = 224
 INNER_SIZE = IMG_SIZE // 2  # 112
 
-# Pre-computed normalisation tensors (avoids re-creating every frame)
+# Pre-computed normalization tensors (avoids re-creating every frame)
 _NORM_MEAN = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(3, 1, 1)
 _NORM_STD  = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(3, 1, 1)
 
@@ -212,8 +212,8 @@ def _clamp_square(cx, cy, half, img_w, img_h):
 def compose_input(frame_bgr, torso_box):
     """
     Build a 224x224 composite image (RGB tensor) from a BGR frame.
-    Skips PIL entirely — does resize in OpenCV, then converts the small
-    224x224 patch to a normalised float32 tensor directly.
+    Skips PIL entirely, doing the resize in OpenCV, then converting the small
+    224x224 patch to a normalized float32 tensor directly.
     """
     h, w = frame_bgr.shape[:2]
     tx1, ty1, tx2, ty2 = torso_box
@@ -240,7 +240,7 @@ def compose_input(frame_bgr, torso_box):
     offset = (IMG_SIZE - INNER_SIZE) // 2
     composite[offset:offset + INNER_SIZE, offset:offset + INNER_SIZE] = inner_resized
 
-    # BGR uint8 -> RGB float32 tensor, normalised (no PIL round-trip)
+    # BGR uint8 -> RGB float32 tensor, normalized (no PIL round-trip)
     rgb = cv2.cvtColor(composite, cv2.COLOR_BGR2RGB)
     tensor = torch.from_numpy(rgb).permute(2, 0, 1).float().div_(255.0)
     tensor.sub_(_NORM_MEAN).div_(_NORM_STD)
@@ -348,7 +348,7 @@ class ShirtColorDetector:
 
     def process_frame(self, frame_bgr):
         """
-        Detect all persons + torsos, predict colour(s), annotate frame in-place.
+        Detect all persons + torsos, predict color(s), annotate frame in-place.
 
         Returns
         -------

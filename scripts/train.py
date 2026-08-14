@@ -9,7 +9,7 @@ Key differences from the V2 notebook, and why
 AMP + gradient accumulation
     A 6 GB laptop GPU cannot hold ResNet-50 at batch 64 / 224px in fp32
     (~10-12 GB of activations). Batch 32 under autocast fits in ~4 GB, and
-    accumulating 2 steps keeps the EFFECTIVE batch at 64 so the optimisation
+    accumulating 2 steps keeps the EFFECTIVE batch at 64 so the optimization
     trajectory stays comparable to the original run.
 
 Trainer-controlled photometric augmentation
@@ -20,7 +20,7 @@ Trainer-controlled photometric augmentation
     steering by metadata was steering with ~30% of the wheel.
 
     Run A is the ablation arm with that layer removed, which quantifies its
-    regularisation contribution: the train/val gap widens monotonically from
+    regularization contribution: the train/val gap widens monotonically from
     0.048 (epoch 10) to 0.264 (epoch 80).
 
     Both properties are wanted, and neither configuration supplies both. The
@@ -31,7 +31,7 @@ Trainer-controlled photometric augmentation
     strength dial. --no-live-aug reproduces the ablation arm.
 
 Starts from ImageNet, not V1
-    The original V2 run initialised from V1's finetune_best.pth. That
+    The original V2 run initialized from V1's finetune_best.pth. That
     checkpoint no longer exists, so this starts from ImageNet weights. Run A's
     numbers are therefore NOT directly comparable to V2's published 0.5942 --
     which was already true, since V2's exact 22k images are unreproducible.
@@ -148,7 +148,7 @@ def build_transforms(live_strengths=None, live_p=0.5):
     The photometric layer runs FIRST, on the raw RGB array, because the
     trainer sets its per-axis strengths and therefore knows exactly what was
     applied. Passing live_strengths=None disables it entirely (Run A's
-    behaviour), which is measurably under-regularised.
+    behavior), which is measurably under-regularized.
     """
     stages = []
     if live_strengths is not None:
@@ -279,14 +279,14 @@ class Adaptive:
     """Per-class loss weighting from validation MAE.
 
     Label smoothing is deliberately NOT adaptive here. V2 escalated it on
-    stagnation, on the reasoning "plateau => overfitting => regularise harder".
+    stagnation, on the reasoning "plateau => overfitting => regularize harder".
     Three problems with that:
 
       * It never fired. Across Run A's 73 adjustments: 0 increases, 7
         decreases, and s sat pinned at the 0.02 floor for 90% of training.
       * No result in the literature supports degrading targets on a plateau.
         Plateau response belongs on the LR and on the inputs.
-      * Smoothing is the only common regulariser that alters ground truth
+      * Smoothing is the only common regularizer that alters ground truth
         rather than the model or the input -- and these targets are measured
         pixel compositions, not estimates (Geng 2016; Singh et al. 2025).
 
@@ -329,7 +329,7 @@ def main():
     ap.add_argument("--no-amp", action="store_true")
     ap.add_argument("--no-live-aug", action="store_true",
                     help="disable trainer-controlled photometric augmentation "
-                         "(reproduces Run A, which under-regularised)")
+                         "(reproduces Run A, which under-regularized)")
     ap.add_argument("--live-p", type=float, default=0.5)
     ap.add_argument("--label-smooth", type=float, default=0.0,
                     help="fixed; 0 keeps the measured label distribution intact")
@@ -339,7 +339,7 @@ def main():
                          "freezes early layers on a cold start")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--smoke", action="store_true",
-                    help="2 epochs on a small subset — verifies it runs and fits")
+                    help="2 epochs on a small subset, to verify it runs and fits")
     args = ap.parse_args()
 
     os.makedirs(args.ckpt_dir, exist_ok=True)
@@ -532,7 +532,7 @@ def main():
     log(f"  KL loss      : {test_loss:.4f}")
     log(f"  top-1        : {top1:.1%}")
     log(f"  MAE          : {mae:.4f}")
-    log(f"  (val was {best_val:.4f} — val is optimised against, test is not)")
+    log(f"  (val was {best_val:.4f}. Val is optimized against, test is not)")
 
     with open(os.path.join(args.log_dir, f"{args.tag}_test.json"), "w", encoding="utf-8") as fh:
         json.dump({"test_kl": test_loss, "test_top1": top1, "test_mae": mae,

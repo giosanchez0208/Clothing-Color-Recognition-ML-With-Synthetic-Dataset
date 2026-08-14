@@ -1,5 +1,5 @@
 """
-Barebones tester for the clothing-colour pipeline.
+Barebones tester for the clothing-color pipeline.
 
 Runs the full inference path on a real image or a live camera feed, with
 either the PyTorch checkpoint or an exported ONNX model, so both backends
@@ -7,14 +7,14 @@ can be sanity-checked against each other.
 
 Pipeline (matches how the training data was built)
 --------------------------------------------------
-  1. locate a torso            YOLO pose keypoints, or a centre crop with --no-pose
+  1. locate a torso            YOLO pose keypoints, or a center crop with --no-pose
   2. compose_input             112x112 tight torso crop pasted onto a 224x224
                                wider context crop -- this reproduces the
                                inner-square-on-background layout the model was
                                trained on. Feeding a raw photo instead would be
                                a distribution mismatch.
   3. predict                   13-way softmax
-  4. report                    every colour above max(0.08, top * 0.35), so
+  4. report                    every color above max(0.08, top * 0.35), so
                                patterned garments can return several
 
 Usage
@@ -67,7 +67,7 @@ def _clamp_square(cx, cy, half, w, h):
 
 
 def compose_input(frame_bgr, box):
-    """Rebuild the training layout: tight torso crop centred on wider context."""
+    """Rebuild the training layout: tight torso crop centered on wider context."""
     h, w = frame_bgr.shape[:2]
     x1, y1, x2, y2 = box
     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
@@ -91,7 +91,7 @@ def compose_input(frame_bgr, box):
     return ((chw - MEAN) / STD)[None, ...].astype(np.float32), comp
 
 
-def centre_box(frame):
+def center_box(frame):
     """Fallback torso guess when pose detection is unavailable."""
     h, w = frame.shape[:2]
     s = int(min(h, w) * 0.5)
@@ -117,9 +117,9 @@ class TorchBackend:
 
     Checkpoints carry an `architecture` field precisely so this does not have
     to be guessed: resnet50 (teacher), mobilenet_v3_small (student), or
-    mobilenet_v3_small_int8. The quantised variant must be rebuilt in FP32,
-    quantised, and only then loaded -- its state dict contains packed params
-    that have no counterpart in an unquantised module.
+    mobilenet_v3_small_int8. The quantized variant must be rebuilt in FP32,
+    quantized, and only then loaded -- its state dict contains packed params
+    that have no counterpart in an unquantized module.
     """
 
     name = "torch"
@@ -132,11 +132,11 @@ class TorchBackend:
         self.torch = torch
         ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         arch = ck.get("architecture", "resnet50")
-        quantised = "int8" in arch
+        quantized = "int8" in arch
 
         if "mobilenet" in arch:
             model = create_student()
-            if quantised:
+            if quantized:
                 model.eval()
                 model = torch.quantization.quantize_dynamic(
                     model, {nn.Linear}, dtype=torch.qint8)
@@ -146,9 +146,9 @@ class TorchBackend:
         model.load_state_dict(ck["model_state_dict"])
         model.eval()
 
-        # Quantised modules are CPU-only.
+        # Quantized modules are CPU-only.
         want = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.device = torch.device("cpu" if quantised else want)
+        self.device = torch.device("cpu" if quantized else want)
         self.model = model.to(self.device)
         self.arch = arch
         self.epoch = ck.get("epoch", -1) + 1 if "epoch" in ck else None
@@ -166,7 +166,7 @@ class OnnxBackend:
     def __init__(self, onnx_path):
         import onnxruntime as ort
         if not os.path.exists(onnx_path):
-            sys.exit(f"ERROR: {onnx_path} not found — run --export-onnx first")
+            sys.exit(f"ERROR: {onnx_path} not found. Run --export-onnx first")
         self.sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
         self.input = self.sess.get_inputs()[0].name
         self.epoch = self.val = None
@@ -206,7 +206,7 @@ def export_onnx(ckpt_path, out_path):
 
 # ── Pose ─────────────────────────────────────────────────────────────────────
 class Pose:
-    """YOLO pose -> torso box. Optional; --no-pose falls back to a centre crop.
+    """YOLO pose -> torso box. Optional; --no-pose falls back to a center crop.
 
     Kept optional deliberately: ultralytics is AGPL-3.0 and is the only
     copyleft dependency in the project (see NOTICE.md).
@@ -289,7 +289,7 @@ def draw_stats(frame, model_ms):
 def run_frame(frame, backend, pose):
     boxes = pose(frame) if pose else []
     if not boxes:
-        cb = centre_box(frame)
+        cb = center_box(frame)
         boxes = [(cb, cb)]
     results = []
     for person, torso in boxes:
@@ -362,7 +362,7 @@ def main():
         print(f"  model     : {arch}"
               + (f"   (val {backend.val:.4f})" if backend.val else ""))
     print(f"  backend   : {backend.name}   device: {getattr(backend, 'device', 'cpu')}"
-          f"   pose: {'off (centre crop)' if pose is None else 'yolo11n'}")
+          f"   pose: {'off (center crop)' if pose is None else 'yolo11n'}")
 
     # ── single image ─────────────────────────────────────────────────────────
     if args.image:
@@ -397,10 +397,10 @@ def main():
             # Sum across people: with two in frame the model genuinely runs twice.
             model_ms = sum(r[3] for r in results) if results else 0.0
             frame = draw_stats(frame, avg.add(model_ms))
-            cv2.imshow("clothing colour", frame)
+            cv2.imshow("clothing color", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
-            if cv2.getWindowProperty("clothing colour", cv2.WND_PROP_VISIBLE) < 1:
+            if cv2.getWindowProperty("clothing color", cv2.WND_PROP_VISIBLE) < 1:
                 break
     finally:
         cap.release()

@@ -189,7 +189,7 @@ def generate_synthetic_clothing_folds(octaves = 5, persistence = 0.5, seed = Non
     #
     # `seed` matters for reproducibility: _fbm_perlin builds its own Generator
     # via np.random.default_rng(seed), and default_rng(None) draws from OS
-    # entropy — it does NOT inherit np.random.seed(). Leaving this unseeded is
+    # entropy. It does NOT inherit np.random.seed(). Leaving this unseeded is
     # why a V2 dataset can never be regenerated exactly, even with the global
     # RNGs pinned. Callers that need determinism must pass a seed explicitly.
     img = _fbm_perlin(shape=DEFAULT_DIMENSIONS, base_res=(7, 7), octaves=octaves, persistence=persistence, seed=seed)

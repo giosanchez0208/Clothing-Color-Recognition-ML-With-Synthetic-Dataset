@@ -1,5 +1,5 @@
 # =============================================================================
-# instrumented_augment.py — augmentations that report what they did
+# instrumented_augment.py: augmentations that report what they did
 # =============================================================================
 # The V1/V2 pipeline samples a parameter for every augmentation and then throws
 # it away. That discarded number is exactly what a failure-mode diagnosis needs:
@@ -7,8 +7,9 @@
 # *which photometric axis* is responsible.
 #
 # This module re-implements the V2 lighting pipeline so that every effect
-# returns the value it sampled. Distributions are unchanged from V2 — the data
-# is statistically identical — with one deliberate exception, documented below.
+# returns the value it sampled. Distributions are unchanged from V2, so the
+# data is statistically identical, with one deliberate exception documented
+# below.
 #
 # DELIBERATE CHANGE vs V2: hue and saturation are decoupled.
 #   In V2 both live inside `_augment_color_jitter` behind ONE p=0.5 gate, so
@@ -19,7 +20,7 @@
 # Two modes:
 #   apply_lighting(...)      stochastic, matches the V2 training distribution
 #   apply_single_axis(...)   forces exactly ONE axis to a chosen value, leaving
-#                            every other axis neutral — used for probe sets,
+#                            every other axis neutral. Used for probe sets,
 #                            where clean attribution requires that only one
 #                            thing varies at a time.
 # =============================================================================

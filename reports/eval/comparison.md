@@ -1,20 +1,20 @@
 # Cross-Version Evaluation
 
-All models scored on the **same 2,000-image held-out test split** — complete, not subsampled, identical order.
+All models scored on the **same 2,000-image held-out test split**, complete rather than subsampled, in identical order.
 
 ## Headline
 
 | Model | KL | top-1 | MAE | Size | CPU ms |
 |---|---:|---:|---:|---:|---:|
-| Run A — ablation arm (no live aug, LR ×0.001) | 0.8957 | 53.5% | 0.0720 | 90.1 MB | 49.0 |
-| Run A2 — live aug restored (stopped @15, NOT converged) | 1.1511 | 42.4% | 0.0907 | 90.1 MB | 51.2 |
-| Run B — +flat LR, smoothing 0 | 0.6225 | 63.2% | 0.0499 | 90.1 MB | 49.0 |
-| Student FP32 — distilled from Run B | 0.4799 | 67.3% | 0.0423 | 6.0 MB | 5.7 |
-| Student INT8 — deployable | 0.4800 | 67.4% | 0.0423 | 4.2 MB | 12.0 |
+| Run A: ablation arm (no live aug, LR x0.001) | 0.8957 | 53.5% | 0.0720 | 90.1 MB | 67.6 |
+| Run A2: live aug restored (stopped @15, NOT converged) | 1.1511 | 42.4% | 0.0907 | 90.1 MB | 68.1 |
+| Run B: flat LR, smoothing 0 | 0.6225 | 63.2% | 0.0499 | 90.1 MB | 70.3 |
+| Student FP32: distilled from Run B | 0.4799 | 67.3% | 0.0423 | 6.0 MB | 10.8 |
+| Student INT8: deployable | 0.4800 | 67.4% | 0.0423 | 4.2 MB | 11.5 |
 
 ## Per-class MAE
 
-| Colour | runA | runA2 | runB | student | int8 |
+| Color | runA | runA2 | runB | student | int8 |
 |---|---|---|---|---|---|
 | red | 0.0716 | 0.0878 | 0.0455 | 0.0404 | 0.0404 |
 | orange | 0.0640 | 0.0771 | 0.0489 | 0.0420 | 0.0421 |
@@ -30,7 +30,7 @@ All models scored on the **same 2,000-image held-out test split** — complete, 
 | brown | 0.0864 | 0.1048 | 0.0624 | 0.0509 | 0.0509 |
 | olive | 0.0727 | 0.0921 | 0.0484 | 0.0395 | 0.0395 |
 
-## Probe — paired cost per axis
+## Probe: paired cost per axis
 
 | Axis | runA | runA2 | runB | student | int8 |
 |---|---|---|---|---|---|

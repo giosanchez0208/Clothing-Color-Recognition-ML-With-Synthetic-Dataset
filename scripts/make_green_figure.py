@@ -4,7 +4,7 @@ Figure for the green case study.
 Left  : the model's green/yellow decision boundary, swept on flat patches.
 Right : where the 25 library greens sit in hue, sized by how often the sampler
         actually draws them. The contested band below 135 degrees holds 2 of 25
-        colours and 4.1% of the draws — which is why the model's boundary sits
+        colors and 4.1% of the draws, which is why the model's boundary sits
         at ~135 degrees rather than at the library's 117.7.
 
 Usage
@@ -80,7 +80,7 @@ def main():
     ax1.axvline(117.7, color="#555", ls=":", lw=1.2)
     ax1.annotate("library says\ngreen starts here", (117.7, 0.9), fontsize=7.5,
                  color="#555", ha="right", xytext=(116, 0.86))
-    ax1.set_xlabel("CIELAB hue angle (degrees)   —   flat patches, L*=60, b*=28")
+    ax1.set_xlabel("CIELAB hue angle (degrees).  Flat patches, L*=60, b*=28")
     ax1.set_ylabel("predicted probability")
     ax1.set_ylim(-0.02, 1.02)
     ax1.set_title("The model's green/yellow boundary sits at ~135°,\n"

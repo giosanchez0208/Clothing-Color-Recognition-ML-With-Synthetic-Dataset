@@ -1,16 +1,16 @@
 """
-Visualise the 13 colour categories as regions in CIELAB space.
+Visualize the 13 color categories as regions in CIELAB space.
 
 Two panels:
-  left   all 325 library colours in one 3-D CIELAB scatter, each point drawn
-         in its own sRGB — the categories are visibly separate volumes, not
+  left   all 325 library colors in one 3-D CIELAB scatter, each point drawn
+         in its own sRGB. The categories are visibly separate volumes, not
          points
   right  a small 3-D view per category, so each region's shape and spread is
          legible on its own
 
 CIELAB rather than RGB because the axes are perceptual: equal distances
 correspond roughly to equal perceived differences, which is the whole premise
-of asking "which colour would a person call this?"
+of asking "which color would a person call this?"
 
 Usage
 -----
@@ -62,7 +62,7 @@ def main():
     ax.set_zlabel("L*  (lightness)", fontsize=9)
     ax.set_xlim(-90, 90); ax.set_ylim(-90, 90); ax.set_zlim(0, 100)
     ax.view_init(elev=18, azim=42)
-    ax.set_title(f"All {total} library colours in CIELAB\n"
+    ax.set_title(f"All {total} library colors in CIELAB\n"
                  "each category occupies a volume, not a point", fontsize=11)
 
     # ── right: one small view per category ───────────────────────────────────
@@ -104,9 +104,9 @@ def main():
     ax.set_ylabel("L*  (lightness)")
     ax.set_xlim(0, 360); ax.set_ylim(0, 100)
     ax.grid(alpha=0.3)
-    ax.set_title("Chromatic categories by hue angle — adjacent centres are a "
+    ax.set_title("Chromatic categories by hue angle. Adjacent centers are a "
                  "median 13.2° apart,\nwhich is why a ±25° hue shift can move a "
-                 "colour into a different category", fontsize=10)
+                 "color into a different category", fontsize=10)
     plt.tight_layout()
     out2 = os.path.join(OUT_DIR, "cielab_hue_angles.png")
     plt.savefig(out2, dpi=130, bbox_inches="tight")

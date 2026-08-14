@@ -1,4 +1,4 @@
-# Clothing Colour Recognition — pinned to a verified-working environment
+# Clothing Color Recognition: pinned to a verified-working environment
 # (Python 3.13, Windows 11, RTX 4050 / CUDA 13.0)
 #
 # IMPORTANT: torch and torchvision must come from PyTorch's CUDA index, or pip

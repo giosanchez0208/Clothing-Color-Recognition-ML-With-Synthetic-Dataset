@@ -1,5 +1,5 @@
 """
-Distil the ResNet-50 teacher into MobileNetV3-Small, then quantise to INT8.
+Distil the ResNet-50 teacher into MobileNetV3-Small, then quantize to INT8.
 
 Produces the deployable artifact: ~4 MB, CPU-real-time, exported to ONNX.
 
@@ -10,7 +10,7 @@ teacher trained WITH label smoothing distils worse -- smoothing tightens
 same-class clusters and erases the inter-class logit structure a student needs.
 
 Critically, they also found smoothing does NOT hurt the teacher's own
-generalisation or calibration. So comparing teacher val loss across smoothing
+generalization or calibration. So comparing teacher val loss across smoothing
 settings shows nothing; the effect is only visible in the STUDENT. That makes
 this script, not train.py, the place where the smoothing decision gets settled.
 
@@ -31,7 +31,7 @@ Usage
   python scripts/distill.py --teacher checkpoints/runA2_best.pth
   python scripts/distill.py --teacher ... --epochs 60 --tag distilA2
   python scripts/distill.py --teacher ... --smoke
-  python scripts/distill.py --tag distilA2 --eval-only     # quantise + benchmark
+  python scripts/distill.py --tag distilA2 --eval-only     # quantize + benchmark
 """
 import argparse
 import json
@@ -104,7 +104,7 @@ def benchmark(model, device="cpu", n=60, warmup=10):
 
 @torch.no_grad()
 def evaluate_cpu(model, loader):
-    """Evaluate on CPU — required for dynamically quantised models."""
+    """Evaluate on CPU, which dynamically quantized models require."""
     model.eval()
     tot, n, preds, labs = 0.0, 0, [], []
     for imgs, labels in loader:
@@ -140,7 +140,7 @@ def main():
     ap.add_argument("--no-amp", action="store_true")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--eval-only", action="store_true",
-                    help="skip training; quantise + benchmark an existing student")
+                    help="skip training; quantize + benchmark an existing student")
     ap.add_argument("--smoke", action="store_true")
     args = ap.parse_args()
 
@@ -291,7 +291,7 @@ def main():
                 break
         log(f"\n  best student val: {best_val:.4f}")
 
-    # ── Quantise, benchmark, and read the held-out test ONCE ─────────────────
+    # ── Quantize, benchmark, and read the held-out test ONCE ─────────────────
     log("\n" + "=" * 68)
     log("  COMPRESSION + HELD-OUT TEST")
     log("=" * 68)
@@ -313,7 +313,7 @@ def main():
         student_cpu.load_state_dict(torch.load(best_path, map_location="cpu",
                                                weights_only=False)["model_state_dict"])
     student_cpu.eval()
-    # nn.Linear only: dynamic quantisation has never supported Conv2d, so
+    # nn.Linear only: dynamic quantization has never supported Conv2d, so
     # including it was a no-op (verified -- identical 5.95 -> 4.23 MB).
     int8 = torch.quantization.quantize_dynamic(
         student_cpu, {nn.Linear}, dtype=torch.qint8)

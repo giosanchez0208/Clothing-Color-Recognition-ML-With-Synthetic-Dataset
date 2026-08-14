@@ -1,18 +1,18 @@
 """
-Flatten and colour-normalise the IndoorCVPR_09 backgrounds.
+Flatten and color-normalize the IndoorCVPR_09 backgrounds.
 
   datasets/indoorCVPR_09/Images/<category>/*.jpg
-      -> datasets/indoorCVPR_09_modified/*.jpg      (flat, normalised)
+      -> datasets/indoorCVPR_09_modified/*.jpg      (flat, normalized)
 
-Normalisation (utils.dataset_utils.color_balance_image):
+Normalization (utils.dataset_utils.color_balance_image):
   linearise -> Shades-of-Gray white balance (p=6) -> LAB exposure -> CLAHE
 
-Why normalise at all: the garment patch is composited onto these backgrounds,
-and the whole point of the dataset is that colour is the signal. A background
-carrying a strong colour cast pushes the composite's apparent colour around,
-so the label stops matching what the image looks like. Normalising first gives
-a daylight-neutral canvas, and the augmentation stage then re-applies colour
-casts *with known parameters* — which is exactly the difference between noise
+Why normalize at all: the garment patch is composited onto these backgrounds,
+and the whole point of the dataset is that color is the signal. A background
+carrying a strong color cast pushes the composite's apparent color around,
+so the label stops matching what the image looks like. Normalizing first gives
+a daylight-neutral canvas, and the augmentation stage then re-applies color
+casts *with known parameters*, which is exactly the difference between noise
 and a measurable variable.
 
 Differences from the original notebook:
@@ -51,7 +51,7 @@ def _init_worker():
 
 
 def _process(task):
-    """Normalise one image. Returns (status, name)."""
+    """Normalize one image. Returns (status, name)."""
     src, dst = task
     try:
         img = cv2.imread(src)
@@ -77,7 +77,7 @@ def build_tasks(src_root, dst_root, limit=None):
     """Flatten category subdirs into unique output names.
 
     Filenames repeat across categories, so collisions are disambiguated with
-    the category prefix — matching the original notebook's behaviour.
+    the category prefix, matching the original notebook's behavior.
     """
     os.makedirs(dst_root, exist_ok=True)
     tasks, seen = [], set()
@@ -96,7 +96,7 @@ def build_tasks(src_root, dst_root, limit=None):
             # ...and it must be checked CASE-INSENSITIVELY. NTFS and APFS treat
             # `IMG_0073.jpg` and `img_0073.jpg` as the same file while Python's
             # set treats them as distinct, so a case-sensitive check silently
-            # loses one of each pair (20 of them in IndoorCVPR_09) — and loses
+            # loses one of each pair (20 of them in IndoorCVPR_09), and loses
             # them only on Windows/macOS, so the dataset size would differ by
             # platform.
             stem = os.path.splitext(fn)[0]
@@ -130,7 +130,7 @@ def main():
     tasks = build_tasks(args.src, args.dst, args.limit)
     already = len([f for f in os.listdir(args.dst)]) if os.path.isdir(args.dst) else 0
     if not tasks:
-        print(f"Nothing to do — {already:,} backgrounds already prepared.")
+        print(f"Nothing to do. {already:,} backgrounds already prepared.")
         return
 
     print(f"  src     : {args.src}")
@@ -160,7 +160,7 @@ def main():
     final = len(os.listdir(args.dst))
     print(f"\n  usable backgrounds: {final:,}")
     if final < 5000:
-        print("  WARNING: fewer backgrounds than expected — check the source tree.")
+        print("  WARNING: fewer backgrounds than expected. Check the source tree.")
 
 
 if __name__ == "__main__":

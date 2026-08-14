@@ -1,9 +1,9 @@
 # Synthetic Dataset Audit
 
-`datasets\generated_v3` — **28,200 images**, 36 recorded fields per image.
+`datasets\generated_v3`: **28,860 images**, 36 recorded fields per image.
 
 
-Every section states what it tests and what a failure would mean. Verdicts are summarised at the end.
+Every section states what it tests and what a failure would mean. Verdicts are summarized at the end.
 
 
 
@@ -14,29 +14,30 @@ Every section states what it tests and what a failure would mean. Verdicts are s
 
 | Check | Result | Status |
 |---|---|---|
-| Rows in labels.csv | 28,200 | — |
-| Files on disk | 28,200 | OK |
-| Unique filenames | 28,200 | OK |
-| Unique seeds | 28,200 | OK |
+| Rows in labels.csv | 28,860 | n/a |
+| Files on disk | 28,860 | OK |
+| Unique filenames | 28,860 | OK |
+| Unique seeds (train/val/test) | 24,000 of 24,000 | OK |
+| Probe pairing grid | 60 bases x 81 renders, 60 own-controls | OK |
 | Labels sum to 1.0 | [0.999999, 1.000002] | OK |
 | Labels non-negative | yes | OK |
 
 | Split | Count |
 |---|---|
 | train | 20,000 |
-| probe | 4,200 |
+| probe | 4,860 |
 | val | 2,000 |
 | test | 2,000 |
 
-**PASS** — manifest, files, seeds and label simplex all consistent
+**PASS**: manifest, files, seeds, probe pairing and label simplex all consistent
 
 
 ## 2. Label space coverage
 
-*Categories are sampled uniformly by design, so dominant-class counts should be roughly balanced. Heavy imbalance would bias the model toward over-represented colours regardless of the loss function.*
+*Categories are sampled uniformly by design, so dominant-class counts should be roughly balanced. Heavy imbalance would bias the model toward over-represented colors regardless of the loss function.*
 
 
-| Colour | Mean mass | Dominant count | Share |
+| Color | Mean mass | Dominant count | Share |
 |---|---|---|---|
 | red | 0.0763 | 1,747 | 7.9% |
 | orange | 0.0781 | 1,807 | 8.2% |
@@ -56,10 +57,10 @@ Every section states what it tests and what a failure would mean. Verdicts are s
 Uniform reference mass = 0.0769. Max/min dominance ratio = **1.15x**. Chi-square uniformity: stat=37.7, p=0.000174.
 
 
-Label entropy: mean **0.269**, median 0.270, max 0.684. Effectively one-hot (H<0.01): **27.3%** — the remaining 72.7% are genuinely multi-modal targets, which are the samples that exercise the KL objective rather than behaving like hard labels.
+Label entropy: mean **0.269**, median 0.270, max 0.684. Effectively one-hot (H<0.01): **27.3%**, so the remaining 72.7% are genuinely multi-modal targets, which are the samples that exercise the KL objective rather than behaving like hard labels.
 
 
-**PASS** — dominance ratio 1.15x (<2.0 considered acceptable)
+**PASS**: dominance ratio 1.15x (<2.0 considered acceptable)
 
 
 ![Label distribution, class dominance, and target entropy](figures/labels.png)
@@ -86,10 +87,10 @@ Label entropy: mean **0.269**, median 0.270, max 0.684. Effectively one-hot (H<0
 Chi-square goodness-of-fit: stat=5.64, p=0.465. (p > 0.05 means observed mix is consistent with design.)
 
 
-**PASS** — pattern frequencies consistent with design weights (p=0.465)
+**PASS**: pattern frequencies consistent with design weights (p=0.465)
 
 
-Entropy by pattern — a sanity check that multi-colour patterns really do produce multi-modal labels:
+Entropy by pattern, a sanity check that multi-color patterns really do produce multi-modal labels:
 
 
 | Pattern | Mean entropy | n |
@@ -125,18 +126,18 @@ Entropy by pattern — a sanity check that multi-colour patterns really do produ
 *Intervals are Bonferroni-corrected across 10 axes (z=2.81) so the family-wise false-alarm rate is 5%, not 40%.*
 
 
-**PASS** — all 10 axes fire within their family-wise 95% interval
+**PASS**: all 10 axes fire within their family-wise 95% interval
 
 
 ## 5. Parameter distribution fidelity
 
-*Firing at the right rate is not enough — the sampled values must also follow the intended distribution. A Kolmogorov-Smirnov test against the analytic reference catches a sampler that fires correctly but draws from the wrong shape (e.g. uniform where truncated-normal was intended).*
+*Firing at the right rate is not enough. The sampled values must also follow the intended distribution. A Kolmogorov-Smirnov test against the analytic reference catches a sampler that fires correctly but draws from the wrong shape (e.g. uniform where truncated-normal was intended).*
 
 
-**Why each axis has the shape it does.** Peaked where the physical world has a 'correct' value it clusters around; uniform where it does not. Cameras aim for correct exposure and mostly succeed, so `brightness` and `saturation` are truncated normals. Most photographs are roughly in focus and focus error has a hard floor at zero, so `blur` is a half-normal. But there is no privileged illuminant across many rooms, no privileged compression setting, and no privileged hue offset for what is purely a regulariser — so `temperature`, `jpeg`, `hue`, `shadow`, `noise`, `specular` and `vignette` are uniform. Uniform brightness would assert that a wildly underexposed frame is as likely as a correct one, which is false about cameras and wastes model capacity on a failure mode reality rarely produces. Full reasoning in `docs/curriculum-design.md`.
+**Why each axis has the shape it does.** Peaked where the physical world has a 'correct' value it clusters around; uniform where it does not. Cameras aim for correct exposure and mostly succeed, so `brightness` and `saturation` are truncated normals. Most photographs are roughly in focus and focus error has a hard floor at zero, so `blur` is a half-normal. But there is no privileged illuminant across many rooms, no privileged compression setting, and no privileged hue offset for what is purely a regularizer, so `temperature`, `jpeg`, `hue`, `shadow`, `noise`, `specular` and `vignette` are uniform. Uniform brightness would assert that a wildly underexposed frame is as likely as a correct one, which is false about cameras and wastes model capacity on a failure mode reality rarely produces. Full reasoning in `docs/curriculum-design.md`.
 
 
-**Reading the figure below.** Two axes can show spikes for entirely different reasons. `blur` has a *real* point mass: `clip()` maps every draw below 0.1 onto exactly 0.1 rather than resampling, so ~15.8% of blur values are identical. `jpeg` shows *no* real structure — it takes 46 integer values, and any bin count that is not a multiple of that produces moiré banding. Bins are now allocated per-value for discrete axes. A spiky histogram is a question, not an answer.
+**Reading the figure below.** Two axes can show spikes for entirely different reasons. `blur` has a *real* point mass: `clip()` maps every draw below 0.1 onto exactly 0.1 rather than resampling, so ~15.8% of blur values are identical. `jpeg` shows *no* real structure, since it takes 46 integer values, and any bin count that is not a multiple of that produces moiré banding. Bins are now allocated per-value for discrete axes. Treat a spiky histogram as a question; separating a sampler defect from a rendering artifact takes a test on the values.
 
 
 | Axis | Intended distribution | n | Observed range | KS p | Status |
@@ -150,14 +151,14 @@ Entropy by pattern — a sanity check that multi-colour patterns really do produ
 | noise | U(0.001, 0.005) | 10,986 | [0.001001, 0.004999] | 0.186 | OK |
 | specular | U(0.15, 0.40) | 4,410 | [0.1501, 0.3997] | 0.890 | OK |
 | vignette | U(0.20, 0.50) | 4,350 | [0.2001, 0.4999] | 0.446 | OK |
-| blur | half-normal(0.5), clipped [0.1, 1.5] | 11,018 | [0.1, 1.5] | — | not analytic |
-| jpeg | discrete uniform {40..85} | 10,933 | [40, 85] | — | not analytic |
+| blur | half-normal(0.5), clipped [0.1, 1.5] | 11,018 | [0.1, 1.5] | n/a | not analytic |
+| jpeg | discrete uniform {40..85} | 10,933 | [40, 85] | n/a | not analytic |
 
 
-*KS p > 0.01 means the sampled values are consistent with the intended distribution. Low p on a large sample can reflect discretisation rather than a real defect.*
+*KS p > 0.01 means the sampled values are consistent with the intended distribution. Low p on a large sample can reflect discretization rather than a real defect.*
 
 
-**PASS** — sampled values match their intended distributions
+**PASS**: sampled values match their intended distributions
 
 
 ![Sampled parameter distribution per augmentation axis](figures/params.png)
@@ -167,16 +168,16 @@ Entropy by pattern — a sanity check that multi-colour patterns really do produ
 
 ## 6. Augmentation independence
 
-*Effects are meant to fire independently. Correlated firing makes axes mutually unattributable — if two always co-occur, no analysis can tell which one caused a failure. This is the check that catches the V1/V2 bug where hue and saturation shared a single gate (correlation +1.0).*
+*Effects are meant to fire independently. Correlated firing makes axes mutually unattributable. If two always co-occur, no analysis can tell which one caused a failure. This is the check that catches the V1/V2 bug where hue and saturation shared a single gate (correlation +1.0).*
 
 
 Largest off-diagonal correlation: **0.0180** (blur vs noise). Noise threshold at n=22,000 is ~0.0202.
 
 
-**hue vs saturation = -0.0067** — in V1/V2 this was structurally +1.000 because both sat behind one probability gate. They are now independently sampled, which is what makes per-axis attribution possible at all.
+**hue vs saturation = -0.0067**. In V1/V2 this was structurally +1.000 because both sat behind one probability gate. They are now independently sampled, which is what makes per-axis attribution possible at all.
 
 
-**PASS** — max |correlation| 0.0180 is within sampling noise
+**PASS**: max |correlation| 0.0180 is within sampling noise
 
 
 ![Pairwise correlation of augmentation firing](figures/independence.png)
@@ -205,12 +206,12 @@ Expected mean = 4.40, observed = **4.39** (range 0–10).
 | 10 | 4 | 0.0% |
 
 
-## 7. Colour/augmentation confounding
+## 7. Color/augmentation confounding
 
-*The most consequential check here. Augmentation is applied after the garment colour is chosen, so the two must be statistically independent. If, say, blue garments were systematically darker, the model could reach the right answer using brightness as a proxy for colour — scoring well on this dataset while learning something that does not transfer. A leak here would invalidate the benchmark, not merely degrade it.*
+*The most consequential check here. Augmentation is applied after the garment color is chosen, so the two must be statistically independent. If, say, blue garments were systematically darker, the model could reach the right answer using brightness as a proxy for color, scoring well on this dataset while learning something that does not transfer. A leak here would invalidate the benchmark, not merely degrade it.*
 
 
-| Axis | Most correlated colour | Pearson r |
+| Axis | Most correlated color | Pearson r |
 |---|---|---|
 | brightness | green | -0.0200 |
 | temp_r | blue | +0.0158 |
@@ -227,12 +228,12 @@ Expected mean = 4.40, observed = **4.39** (range 0–10).
 Strongest leak across all 10x13 pairs: **r = +0.0374** (specular vs green). Noise floor at n=22,000 is ~0.0202.
 
 
-**PASS** — max |r| = 0.0374 — augmentation carries no usable information about garment colour
+**PASS**: max |r| = 0.0374, so augmentation carries no usable information about garment color
 
 
 ## 8. Train/validation parity
 
-*Validation must be drawn from the same distribution as training, otherwise val loss measures distribution shift rather than generalisation, and is not comparable across runs.*
+*Validation must be drawn from the same distribution as training, otherwise val loss measures distribution shift rather than generalization, and is not comparable across runs.*
 
 
 | Axis | n train | n val | KS p | Verdict |
@@ -252,12 +253,12 @@ Strongest leak across all 10x13 pairs: **r = +0.0374** (specular vs green). Nois
 Label entropy, train vs val: KS p = 0.391.
 
 
-**PASS** — validation is distributionally indistinguishable from training
+**PASS**: validation is distributionally indistinguishable from training
 
 
 ### 8b. Background isolation
 
-*Distributional parity is not sufficient. The model sees the full 224x224 frame, not just the garment patch, so a background appearing in both train and validation is a memorisation channel — the model can recognise the room rather than generalise the colour. Backgrounds must be partitioned, not merely sampled identically.*
+*Distributional parity is not sufficient. The model sees the full 224x224 frame, not just the garment patch, so a background appearing in both train and validation is a memorization channel. The model can recognize the room rather than generalize the color. Backgrounds must be partitioned, not merely sampled identically.*
 
 
 | Split | Unique backgrounds | Images | Reuse factor |
@@ -265,10 +266,10 @@ Label entropy, train vs val: KS p = 0.391.
 | train | 8,946 | 20,000 | 2.24x |
 | val | 1,102 | 2,000 | 1.81x |
 | test | 1,075 | 2,000 | 1.86x |
-| probe | 1,403 | 4,200 | 2.99x |
+| probe | 60 | 4,860 | 81.00x |
 
 
-Pairwise background overlap — every cell must be zero:
+Pairwise background overlap, where every cell must be zero:
 
 
 | Pair | Shared backgrounds | Status |
@@ -280,12 +281,12 @@ Pairwise background overlap — every cell must be zero:
 | val n probe | 0 | OK |
 | test n probe | 0 | OK |
 
-**PASS** — all 6 split pairs draw from disjoint background pools — no room is ever seen by two splits
+**PASS**: all 6 split pairs draw from disjoint background pools, so no room is ever seen by two splits
 
 
 ### 8c. Held-out test set
 
-*Validation is not a clean generalisation estimate here: it drives the LR scheduler, checkpoint selection, early stopping AND the adaptive controller (class weights, augmentation strength, label smoothing). Four channels of optimisation pressure on the same 2,000 images. A separate split that nothing in the training loop ever reads is the only number that can be reported without that caveat.*
+*Validation is not a clean generalization estimate here: it drives the LR scheduler, checkpoint selection, early stopping AND the adaptive controller (class weights, augmentation strength, label smoothing). Four channels of optimization pressure on the same 2,000 images. A separate split that nothing in the training loop ever reads is the only number that can be reported without that caveat.*
 
 
 Test split: **2,000 images**, drawn from a background pool disjoint from train, val and probe.
@@ -311,7 +312,7 @@ Distributional parity with train (a test set must be representative, not merely 
 *Holm-Bonferroni across 10 tests, family-wise alpha 0.01 (threshold 0.0000).*
 
 
-**PASS** — 2,000 images, representative of train, never touched by the training loop
+**PASS**: 2,000 images, representative of train, never touched by the training loop
 
 
 ## 9. Probe set validity
@@ -321,26 +322,26 @@ Distributional parity with train (a test set must be representative, not merely 
 
 | Check | Result | Status |
 |---|---|---|
-| Control images | 200 | OK |
+| Control images | 60 | OK |
 | Control has zero augmentation | yes | OK |
-| Swept images | 4,000 | — |
+| Swept images | 4,800 | n/a |
 | Every swept image isolates 1 axis | yes | OK |
 | All 10 axes covered | yes | OK |
 
 | Axis | Levels | Images/cell | Min value | Max value | Balance |
 |---|---|---|---|---|---|
-| brightness | 8 | 50–50 | 0.3 | 1.8 | even |
-| temperature | 8 | 50–50 | -1 | 1 | even |
-| hue | 8 | 50–50 | -25 | 25 | even |
-| saturation | 8 | 50–50 | 0.3 | 2 | even |
-| shadow | 8 | 50–50 | 0.1 | 0.55 | even |
-| blur | 8 | 50–50 | 0.1 | 1.5 | even |
-| noise | 8 | 50–50 | 0.001 | 0.005 | even |
-| jpeg | 8 | 50–50 | 40 | 85 | even |
-| specular | 8 | 50–50 | 0.15 | 0.4 | even |
-| vignette | 8 | 50–50 | 0.2 | 0.5 | even |
+| brightness | 8 | 60–60 | 0.3 | 1.8 | even |
+| temperature | 8 | 60–60 | -1 | 1 | even |
+| hue | 8 | 60–60 | -25 | 25 | even |
+| saturation | 8 | 60–60 | 0.3 | 2 | even |
+| shadow | 8 | 60–60 | 0.1 | 0.55 | even |
+| blur | 8 | 60–60 | 0.1 | 1.5 | even |
+| noise | 8 | 60–60 | 0.001 | 0.005 | even |
+| jpeg | 8 | 60–60 | 40 | 85 | even |
+| specular | 8 | 60–60 | 0.15 | 0.4 | even |
+| vignette | 8 | 60–60 | 0.2 | 0.5 | even |
 
-**PASS** — probe set supports clean single-axis attribution
+**PASS**: probe set supports clean single-axis attribution
 
 
 ## Samples
@@ -355,15 +356,15 @@ Distributional parity with train (a test set must be representative, not merely 
 
 | Check | Verdict | Detail |
 |---|---|---|
-| integrity | PASS | manifest, files, seeds and label simplex all consistent |
+| integrity | PASS | manifest, files, seeds, probe pairing and label simplex all consistent |
 | label balance | PASS | dominance ratio 1.15x (<2.0 considered acceptable) |
 | pattern mix | PASS | pattern frequencies consistent with design weights (p=0.465) |
 | fire rates | PASS | all 10 axes fire within their family-wise 95% interval |
 | parameter fidelity | PASS | sampled values match their intended distributions |
 | independence | PASS | max |correlation| 0.0180 is within sampling noise |
-| no colour confound | PASS | max |r| = 0.0374 — augmentation carries no usable information about garment colour |
+| no color confound | PASS | max |r| = 0.0374, so augmentation carries no usable information about garment color |
 | train/val parity | PASS | validation is distributionally indistinguishable from training |
-| background isolation | PASS | all 6 split pairs draw from disjoint background pools — no room is ever seen by two splits |
+| background isolation | PASS | all 6 split pairs draw from disjoint background pools, so no room is ever seen by two splits |
 | held-out test set | PASS | 2,000 images, representative of train, never touched by the training loop |
 | probe validity | PASS | probe set supports clean single-axis attribution |
 
@@ -371,5 +372,5 @@ Distributional parity with train (a test set must be representative, not merely 
 **11 of 11 checks passed.**
 
 
-The dataset is internally consistent, matches its design specification, and carries no measurable colour/augmentation confound. It is suitable as a benchmark.
+The dataset is internally consistent, matches its design specification, and carries no measurable color/augmentation confound. It is suitable as a benchmark.
 

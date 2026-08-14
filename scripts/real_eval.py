@@ -22,9 +22,9 @@ The synthetic labels are exact pixel fractions because the generator computed
 them. A human cannot produce that, and asking for "70/30" invents precision that
 does not exist. So the schema asks only for things a person can judge reliably:
 
-  dominant         the single most-covering colour   (one of the 13)
-  colors_present   every colour covering >= ~15% of the visible garment
-  freeform         what you would naturally call it -- "cyan", "navy", "teal"
+  dominant         the single most-covering color   (one of the 13)
+  colors_present   every color covering >= ~15% of the visible garment
+  freeform         what you would naturally call it: "cyan", "navy", "teal"
 
 `freeform` exists to separate two very different failures: the model being
 wrong, versus the 13-category taxonomy being unable to express the answer at
@@ -58,7 +58,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from utils.instrumented_generator import COLOR_CLASSES
-from scripts.predict import (Pose, TorchBackend, centre_box, compose_input,
+from scripts.predict import (Pose, TorchBackend, center_box, compose_input,
                              report, softmax)
 
 DEFAULT_DIR = os.path.join(PROJECT_ROOT, "datasets", "real")
@@ -86,7 +86,7 @@ def prepare(photo_dir, out_dir, use_pose=True):
         boxes = pose(frame) if pose else []
         found = bool(boxes)
         n_pose += found
-        torso = boxes[0][1] if found else centre_box(frame)
+        torso = boxes[0][1] if found else center_box(frame)
         _, comp = compose_input(frame, torso)
 
         name = f"{i:03d}_{os.path.splitext(os.path.basename(p))[0]}.jpg"
@@ -103,14 +103,14 @@ def prepare(photo_dir, out_dir, use_pose=True):
 
     print(f"\n  photos ingested : {len(rows)}")
     print(f"  torso found     : {n_pose}/{len(rows)}"
-          + ("  (rest fell back to a centre crop)" if n_pose < len(rows) else ""))
+          + ("  (rest fell back to a center crop)" if n_pose < len(rows) else ""))
     print(f"  crops           : {crops}")
     print(f"  annotate here   : {csv_path}")
-    print(f"\n  Annotate the CROPS, not the originals — that is what the model sees.")
-    print(f"  Valid colours   : {', '.join(COLOR_CLASSES)}")
+    print(f"\n  Annotate the CROPS, not the originals. That is what the model sees.")
+    print(f"  Valid colors   : {', '.join(COLOR_CLASSES)}")
     print("""
-  dominant       one colour, the one covering the most garment area
-  colors_present semicolon-separated, every colour covering >= ~15%
+  dominant       one color, the one covering the most garment area
+  colors_present semicolon-separated, every color covering >= ~15%
                  e.g.  black;white
   freeform       what you'd naturally say, even if it is not in the 13
                  e.g.  cyan   (this is how taxonomy gaps get measured)
@@ -124,13 +124,13 @@ def parse_set(s):
 def score(out_dir, ckpt, use_pose=True, topk=3):
     csv_path = os.path.join(out_dir, "annotations.csv")
     if not os.path.exists(csv_path):
-        sys.exit(f"ERROR: {csv_path} not found — run --prepare first")
+        sys.exit(f"ERROR: {csv_path} not found. Run --prepare first")
     with open(csv_path, newline="", encoding="utf-8") as fh:
         rows = [r for r in csv.DictReader(fh)]
 
     done = [r for r in rows if r["dominant"].strip()]
     if not done:
-        sys.exit("ERROR: no annotated rows — fill in `dominant` at minimum")
+        sys.exit("ERROR: no annotated rows. Fill in `dominant` at minimum")
     print(f"  annotated: {len(done)}/{len(rows)}")
 
     valid = set(COLOR_CLASSES)
@@ -196,14 +196,14 @@ def score(out_dir, ckpt, use_pose=True, topk=3):
     se = (n_top1 / n * (1 - n_top1 / n) / n) ** 0.5
 
     print("=" * 62)
-    print(f"  SIM2REAL — n = {n}")
+    print(f"  SIM2REAL, n = {n}")
     print("=" * 62)
-    print(f"  top-1 (dominant colour)   {n_top1/n:6.1%}   +/- {1.96*se:.1%} (95% CI)")
+    print(f"  top-1 (dominant color)   {n_top1/n:6.1%}   +/- {1.96*se:.1%} (95% CI)")
     print(f"  exact set match           {n_exact/n:6.1%}")
     print(f"  set Jaccard               {inter/max(union,1):6.1%}")
     print(f"  set precision / recall    {prec:6.1%} / {rec:.1%}   F1 {f1:.1%}")
     print(f"  coverage @top-{topk}          {cover_hits/max(cover_tot,1):6.1%}"
-          f"   (human colours appearing in the model's top {topk})")
+          f"   (human colors appearing in the model's top {topk})")
     if taxonomy_gap:
         print(f"\n  taxonomy gaps             {taxonomy_gap}/{n} "
               f"({taxonomy_gap/n:.0%}) had a freeform name outside the 13 categories")

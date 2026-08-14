@@ -11,7 +11,7 @@ Why the metadata matters
 ------------------------
 The soft label says what the model *should* predict. The metadata says what
 was *done to the image* to make it hard. Only the second one lets you ask
-"which photometric axis is the model failing on" — the question that drives
+"which photometric axis is the model failing on", the question that drives
 the whole curriculum. See docs/curriculum-design.md.
 
 Determinism
@@ -70,7 +70,7 @@ def _init_worker(csv_path, bg_dir, image_dir, base_seed, jpeg_quality, pools):
     pool, so no background is ever seen by two splits. Sampling with
     replacement from a shared pool guarantees overlap, and since the model sees
     the whole frame rather than just the garment patch, a shared background is
-    a memorisation path between splits.
+    a memorization path between splits.
 
     Windows uses spawn, so this runs fresh in each child. cv2's thread pool is
     disabled: N worker processes each spawning M threads gives N*M runnable
@@ -167,7 +167,7 @@ def main():
     labels_csv = os.path.join(args.out, "labels.csv")
     os.makedirs(image_dir, exist_ok=True)
 
-    for path, what in ((args.bgs, "backgrounds"), (args.colors, "colour library")):
+    for path, what in ((args.bgs, "backgrounds"), (args.colors, "color library")):
         if not os.path.exists(path):
             sys.exit(f"ERROR: {what} not found at {path}")
 
@@ -181,12 +181,12 @@ def main():
     if os.path.exists(labels_csv):
         with open(labels_csv, newline="", encoding="utf-8") as fh:
             existing = {r["filename"] for r in csv.DictReader(fh)}
-        print(f"Resuming — {len(existing):,} images already recorded")
+        print(f"Resuming. {len(existing):,} images already recorded")
 
     tasks = build_tasks(n_train, n_val, n_test, include_probe,
                         args.probe_levels, args.probe_base, existing)
     if not tasks:
-        print("Nothing to do — dataset already complete.")
+        print("Nothing to do. Dataset already complete.")
         return
 
     pools = split_background_pool(args.bgs, seed=args.seed)

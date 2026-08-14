@@ -1,5 +1,5 @@
 # =============================================================================
-# color_utils.py — ColorLibrary
+# color_utils.py: ColorLibrary
 # =============================================================================
 # Construction
 #   __init__(csv_path, color_categories, name_col='ISCC-NBS Level 3 Name', hex_col='hex')
@@ -46,7 +46,7 @@
 #   summary()
 #     Print color count per category.
 #
-# Distance from centroid — Mahalanobis in CIELAB
+# Distance from centroid: Mahalanobis in CIELAB
 #   Colors in each category are represented as points in the 3-D CIELAB space
 #   (L*, a*, b*).  The category's covariance matrix S is computed over all member
 #   points, capturing both per-axis variance and the axis correlations within that
@@ -56,7 +56,7 @@
 #
 #   Why Mahalanobis over Euclidean ΔE?  CIELAB is perceptually uniform but a
 #   category's natural spread is never isotropic: a warm-red group may vary widely
-#   in lightness yet be tightly clustered in hue angle.  S⁻¹ normalises each
+#   in lightness yet be tightly clustered in hue angle.  S⁻¹ normalizes each
 #   direction by its actual spread, so d_M = 1 means "one standard deviation away
 #   along the principal axis of that category", regardless of how elongated or
 #   tilted the cloud is.  This makes distances comparable across categories and
@@ -183,7 +183,7 @@ class ColorLibrary:
             return None
 
     # -------------------------------------------------------------------------
-    # CIELAB conversion — sRGB/D65, IEC 61966-2-1
+    # CIELAB conversion: sRGB/D65, IEC 61966-2-1
     # -------------------------------------------------------------------------
 
     @classmethod
@@ -302,8 +302,8 @@ class ColorLibrary:
         elev: float = 20.0,
         azim: float = 45.0,
     ):
-        """CIELAB 3-D scatter (L*, a*, b* axes). Point colour = actual sRGB; size = chroma C*_ab."""
-        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3-D projection
+        """CIELAB 3-D scatter (L*, a*, b* axes). Point color = actual sRGB; size = chroma C*_ab."""
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401, registers 3-D projection
 
         hex_list = self.color_library.get(category, [])
         if not hex_list:
@@ -406,7 +406,7 @@ class ColorLibrary:
         plt.show()
 
     def show_all_categories(self, max_per_category: int = 5, ncols: int = 5, figsize: Tuple[int, int] = (15, 10)):
-        """Swatch overview grid — each cell shows up to max_per_category sample colors per category."""
+        """Swatch overview grid. Each cell shows up to max_per_category sample colors per category."""
         categories = list(self.color_library.keys())
         nrows = (len(categories) + ncols - 1) // ncols
         fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
@@ -500,7 +500,7 @@ class ColorLibrary:
         """Return [(hex, mahalanobis_distance), ...] sorted ascending by distance from centroid.
 
         Uses the category's own covariance matrix so that the spread and axis
-        correlations of the colour cloud are taken into account (see module header
+        correlations of the color cloud are taken into account (see module header
         for a full explanation).  Falls back to Euclidean distance when the
         covariance matrix is singular.
         """
@@ -522,7 +522,7 @@ class ColorLibrary:
     def get_color_mahalanobis_distance(self, category: str, L: float, a: float, b: float) -> float:
         """Mahalanobis distance of a single CIELAB point from the named category's distribution.
 
-        Useful for scoring / classifying an unknown colour against a trained
+        Useful for scoring / classifying an unknown color against a trained
         category (lower = more typical of that category).
         Falls back to Euclidean when the covariance matrix is singular.
         """

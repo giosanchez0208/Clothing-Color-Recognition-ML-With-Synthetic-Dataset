@@ -1,5 +1,5 @@
 # =============================================================================
-# controlled_augment.py — live photometric augmentation the trainer can steer
+# controlled_augment.py: live photometric augmentation the trainer can steer
 # =============================================================================
 # The problem this solves
 # -----------------------
@@ -14,7 +14,7 @@
 # metadata claim (recorded parameters then describe everything the model sees)
 # and quantifies what the layer was contributing: the train/val gap widens
 # monotonically from 0.048 at epoch 10 to 0.264 at epoch 80 -- substantial
-# regularisation.
+# regularization.
 #
 # The resolution
 # --------------

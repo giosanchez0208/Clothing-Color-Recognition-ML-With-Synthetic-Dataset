@@ -1,13 +1,13 @@
 # =============================================================================
-# color_utils_extended.py — V2 dataset generation extensions
+# color_utils_extended.py: V2 dataset generation extensions
 # =============================================================================
 # New features over v1 (dataset_utils.py):
 #   • Three additional clothing patterns: plaid, gradient/ombre, chevron
 #   • Three additional augmentations: perspective warp, specular highlight,
 #     vignette
-#   • InnerSquareGeneratorV2  — configurable CSV path, expanded pattern set,
+#   • InnerSquareGeneratorV2  : configurable CSV path, expanded pattern set,
 #                               overlay blend mode for fold textures
-#   • DatasetGeneratorV2      — composes with v2 augmentation pipeline
+#   • DatasetGeneratorV2      : composes with v2 augmentation pipeline
 # =============================================================================
 
 import numpy as np

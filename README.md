@@ -1,4 +1,4 @@
-# Clothing Colour Recognition with Synthetic Data
+# Clothing Color Recognition with Synthetic Data
 
 **"Just use the eyedropper tool!"** you might be telling me. Let me be the first to tell you that it's not that easy.
 
@@ -6,49 +6,55 @@
 
 ## Inspiration
 
-This idea came to me in a discussion with my colleagues from my previous job. We were discussing shirt colours (it was relevant to our work) and touched on the ambiguity between how humans categorize colours.
+This idea came to me in a discussion with my colleagues from my previous job. We were discussing shirt colors (it was relevant to our work) and touched on the ambiguity in how different people categorize colors.
 
-Of course, I went digging on the internet. That's when I came across Randall Munroe's [XKCD Colour Survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). This was my first exposure into the problem of human vs computer color categorization. 
+Of course, I went digging on the internet. That's when I came across Randall Munroe's [XKCD Color Survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). This was my first exposure to the problem of human vs computer color categorization. 
 
-![XKCD colour survey results](documentation/images/color-survey-results-chart.webp)
+![XKCD color survey results](documentation/images/color-survey-results-chart.webp)
 
-However, this graph is restricted by only touching luminance ranges from 0–50. So I couldn't use their database to categorize lighter colours like pink.
+However, this graph is restricted to the saturated faces of the RGB cube. So I couldn't use their database to categorize lighter colors like pastels and off-whites.
 
-I did more digging, and found the [ISCC-NBS Level 3 colour system](https://www.munsellcolorscienceforpainters.com/ISCCNBS/ISCCNBSSystem.html). This one was clearer and more systematic. There are 13 main categories for colours:
+I did some more digging, and found the [ISCC-NBS Level 3 color system](https://www.munsellcolorscienceforpainters.com/ISCCNBS/ISCCNBSSystem.html). This one was clearer and more systematic. There are 13 main categories for colors:
 
 `red` `orange` `yellow` `green` `blue` `violet` `purple` `white` `gray` `black` `pink` `brown` `olive`
 
-along with modifiers such as *dark*, *brilliant*, *greenish*, and so on. This is good news. We have a standardized list of colours we can use to categorize colours that also align with human perception.
+along with modifiers such as *dark*, *brilliant*, *greenish*, and so on. The best part is that it covers the whole spectrum of colors. This is good news. We have a standardized list of colors we can use to categorize colors that also align with human perception.
 
-The important thing to note is that there is a **base colour which is modified**. The base colour is what I analyzed, and I found that they occupy a certain *area*.
+The important thing to note is that there is a **base color which is modified**. The base color is what I analyzed, and I found that they occupy a certain *area*.
 
-The CIELAB colour space was used for this analysis because it corresponds more to "perceived colour spaces." Since the purpose of this project is related to perception, it only made sense to use a relevant framework.
+The CIELAB color space was used for this analysis because it corresponds more to "perceived color spaces." Since the purpose of this project is related to perception, it only made sense to use a relevant framework.
 
 ![The 13 categories as regions in CIELAB](documentation/figures/cielab_categories.png)
 
-Look at that left panel again. Every category is a **volume**, not a point. Thus, surfaces the nature of this problem. 
+Eyes to the panels on the right. Every category is a **volume**, not a point. This is what surfaces the nature of the problem.
 
 ---
 
-## "I still haven't changed my mind. You can still use the eyedropper tool and just find the closest colour."
+## "I still haven't changed my mind. You can still use the eyedropper tool and just find the closest color."
 
 I would agree if you positioned this person under perfect conditions. Adequate lighting and a perfect camera.
 
 But reality, more often than not, does not have those conditions.
 
-Under an orange streetlamp, the colour you might pick up from a shirt might be apricot. And in dim lighting, navy blue appears black. Where do you even draw the lines between white, gray, and black? Variables such as brightness, variations in warmth, and so on also affect our perception of colours.
+Under an orange streetlamp, the color you might pick up from a shirt might be apricot. And in dim lighting, navy blue appears black. Where do you even draw the lines between white, gray, and black? Variables such as brightness, variations in warmth, and so on also affect our perception of colors.
 
-We, as humans, have learned to adjust our perception of colours based on the environment.
+We, as humans, have learned to adjust our perception of colors based on the environment.
 
 **Can the same be taught to a model?**
 
 That's the question I wanted to answer.
 
+## "Well, that doesn't sound like a difficult problem. Can't we just train a model on an existing database?"
+
+If such a database exists, of course. Unfortunately, like a lot of computer vision problems, resources are few and far between. Especially for a problem as specific as this. However, this isn't new to me. In my previous job, I've worked extensively with problems where there simply aren't enough datasets. Sometimes going out into the field myself and taking my own photos. Other times, compiling and re-labeling existing datasets. In this case, however, I decided to take a synthetic data approach.
+
+Now, we could go into Blender and create a bunch of assets. That can even be done programmatically. But as with much of my work, I wanted to try something a lot more lightweight.
+
 ---
 
 ## Summary
 
-I built a system that predicts a **probability distribution over 13 colour categories** instead of picking one label and committing to it. It was trained on **28,860 procedurally generated images** that tries and imitate the kind of data my pipeline needs to predict a real-world shirt color.
+I built a system that predicts a **probability distribution over 13 color categories** instead of picking one label and committing to it. It was trained on **28,860 procedurally generated images** that try to imitate the kind of data my pipeline needs to predict a real-world shirt color.
 
 The final model is **4.2 MB** and runs a forward pass in **6.9 ms on CPU**.
 
@@ -61,9 +67,9 @@ The student is **21× smaller, 6.6× faster, and better than its teacher on ever
 
 Two ideas do most of the work here.
 
-**Soft labels.** Most colour classifiers use hard labels. For example, if it declares "this shirt is blue" then that's all the information it has. Not "I'm confident that it's blue, but it could be another color" or "It's blue, and there are other colors." Just blue. This one is trained on distributions derived from actual pixel composition, using KL divergence as the loss. That buys two things: a striped shirt can come back `blue 60%, white 40%` instead of being forced to choose, and a genuinely ambiguous garment can come back `gray 45%, white 35%` and *say* it's uncertain rather than guessing confidently. This is an instance of [Label Distribution Learning](https://palm.seu.edu.cn/xgeng/files/tkde16.pdf).
+**Soft labels.** Most color classifiers use hard labels. For example, if it declares "this shirt is blue" then that's all the information it has. Not "I'm confident that it's blue, but it could be another color" or "It's blue, and there are other colors." Just blue. This one is trained on distributions derived from actual pixel composition, using KL divergence as the loss. That buys two things: a striped shirt can come back `blue 60%, white 40%` instead of being forced to choose, and a genuinely ambiguous garment can come back `gray 45%, white 35%` and *say* it's uncertain rather than guessing confidently. This is an instance of [Label Distribution Learning](https://palm.seu.edu.cn/xgeng/files/tkde16.pdf).
 
-**Sim2real through simulation, not correction.** Rather than white-balancing every frame at inference, the model learns colour constancy during training by seeing the same garment under simulated streetlamps, shadows, and bad cameras. More on why that matters below, but it turns out to be the strongest practical argument in this whole project.
+**Sim2real through simulation, not correction.** Rather than white-balancing every frame at inference, the model learns color constancy during training by seeing the same garment under simulated streetlamps, shadows, and bad cameras. More on why that matters below, but it turns out to be the strongest practical argument in this whole project.
 
 ---
 
@@ -71,7 +77,7 @@ Two ideas do most of the work here.
 
 ### 1. The shirt and the environment
 
-A colour never appears in isolation. It appears on a person, in a room, under some light.
+A color never appears in isolation. It appears on a person, in a room, under some light.
 
 So every training image is built the same way a real one arrives: a garment patch composited into a real indoor scene, then degraded the way a camera would degrade it.
 
@@ -91,17 +97,17 @@ So I generated the data instead. When the generator draws the shirt, it *knows* 
 
 ![Garment pattern types](reports/showcase/patterns.png)
 
-Seven pattern types: solid, stripes, plaid, gradient, chevron, colour blocking, polka dot, drawn from a library of **325 colours, exactly 25 per category**, with fold texture from fractal Brownian-motion Perlin noise so the fabric doesn't read as flat vinyl.
+Seven pattern types: solid, stripes, plaid, gradient, chevron, color blocking, polka dot, drawn from a library of **325 colors, exactly 25 per category**, with fold texture from fractal Brownian-motion Perlin noise so the fabric doesn't read as flat vinyl.
 
 Then ten augmentation axes simulate the camera and the room:
 
 ![Augmentation axes swept in isolation](reports/showcase/augmentation_axes.png)
 
-Brightness, colour temperature, hue, saturation, shadow, blur, noise, JPEG compression, specular highlights, vignette. Each row varies **one** axis and holds everything else fixed. Section 4 will explain how this not only adds variation, but is used as the diagnostic instrument.
+Brightness, color temperature, hue, saturation, shadow, blur, noise, JPEG compression, specular highlights, vignette. Each row varies **one** axis and holds everything else fixed. Section 4 will explain how this not only adds variation, but is used as the diagnostic instrument.
 
-Because of my background with surveillance footage (and seeing its potential in that field), I chose augmentations that could be useful there. Brightness and saturation use truncated normals because cameras mostly get exposure roughly right and fail occasionally; illuminant colour and JPEG quality are uniform because no value is privileged across many rooms and many cameras.
+Because of my background with surveillance footage (and seeing its potential in that field), I chose augmentations that could be useful there. Brightness and saturation use truncated normals because cameras mostly get exposure roughly right and fail occasionally; illuminant color and JPEG quality are uniform because no value is privileged across many rooms and many cameras.
 
-**Every image records what was done to it**, which means all ten parameters, the pattern, the colour count, the label entropy, the background, and its own generation seed. 36 fields per image. That decision is what made everything in section 4 possible.
+**Every image records what was done to it**, which means all ten parameters, the pattern, the color count, the label entropy, the background, and its own generation seed. 36 fields per image. That decision is what made everything in section 4 possible.
 
 ### 3. Why soft labels, concretely
 
@@ -118,16 +124,16 @@ The ordering below fell out of the generator on its own. I never assigned diffic
 | Pattern | Mean label entropy |
 |---|---:|
 | solid | 0.000 |
-| colour blocking | 0.267 |
+| color blocking | 0.267 |
 | gradient | 0.314 |
 | stripes | 0.344 |
 | chevron | 0.378 |
 | plaid | 0.407 |
 | polka dot | 0.455 |
 
-Solid comes out at exactly zero, which it has to, since one colour covering the whole patch carries no ambiguity at all. Polka dot scatters the most small regions and lands highest. Seeing that ladder appear without being asked for was the first sign the labels meant something.
+Solid comes out at exactly zero, which it has to, since one color covering the whole patch carries no ambiguity at all. Polka dot scatters the most small regions and lands highest. Seeing that ladder appear without being asked for was the first sign the labels meant something.
 
-At inference this shows up directly. Anything above `max(0.08, top × 0.35)` gets reported, so a two-tone garment returns two colours. And if the top colour is under 25%, the prediction is flagged **uncertain** rather than guessed.
+At inference this shows up directly. Anything above `max(0.08, top × 0.35)` gets reported, so a two-tone garment returns two colors. And if the top color is under 25%, the prediction is flagged **uncertain** rather than guessed.
 
 ### 4. Training, and building something that can tell me what's wrong
 
@@ -150,11 +156,11 @@ I'm listing these rather than quietly patching them because finding a flaw in yo
 
 The other thing worth stating: **the probe's most useful output was talking me out of an intervention.**
 
-The converged model's largest residual is hue. The obvious move is to train harder on it. I measured the colour library's geometry first, and the median gap between adjacent category centres in hue is **13.2°**, while the augmentation rotates by up to **±25°,** 190% of the distance to the next category. Past a certain point, a hue-rotated garment genuinely *is* a different colour, but the label was computed before the rotation. The request is ill-posed, and training on it would teach hue-invariance to a colour classifier.
+The converged model's largest residual is hue. The obvious move is to train harder on it. I measured the color library's geometry first, and the median gap between adjacent category centers in hue is **13.2°**, while the augmentation rotates by up to **±25°,** 190% of the distance to the next category. Past a certain point, a hue-rotated garment genuinely *is* a different color, but the label was computed before the rotation. The request is ill-posed, and training on it would teach hue-invariance to a color classifier.
 
 ![Chromatic categories by hue angle](documentation/figures/cielab_hue_angles.png)
 
-Meanwhile `temperature`, the axis that models *real* illumination change, fell from **+0.29 to +0.03**, a 9× reduction. The model genuinely learned to see through coloured light.
+Meanwhile `temperature`, the axis that models *real* illumination change, fell from **+0.29 to +0.03**, a 9× reduction. The model genuinely learned to see through colored light.
 
 ---
 
@@ -166,10 +172,12 @@ Every model scored on the **same complete 2,000-image test split**, read exactly
 
 | Model | KL | top-1 | MAE | Size | CPU |
 |---|---:|---:|---:|---:|---:|
-| Run A, baseline | 0.8957 | 53.5% | 0.0720 | 90.1 MB | 49.0 ms |
-| Run B, corrected LR and no label smoothing | 0.6225 | 63.2% | 0.0499 | 90.1 MB | 49.0 ms |
+| Run A, baseline | 0.8957 | 53.5% | 0.0720 | 90.1 MB | 45.4 ms |
+| Run B, corrected LR and no label smoothing | 0.6225 | 63.2% | 0.0499 | 90.1 MB | 45.4 ms |
 | Student FP32 | 0.4799 | 67.3% | 0.0423 | 6.0 MB | 6.2 ms |
 | **Student INT8** | **0.4800** | **67.4%** | **0.0423** | **4.2 MB** | **6.9 ms** |
+
+CPU timings come from `scripts/distill.py`, which benchmarks one model at a time. Run A and Run B are the same ResNet-50 at 90.1 MB, so they share a figure. The CPU column in `reports/eval/comparison.md` is measured differently and moves with machine load, which is [written up in the ledger](docs/results.md#do-not-read-the-cpu-column-as-a-latency-benchmark).
 
 INT8 quantization turned out to be free. KL moves by **0.0001** and top-1 goes *up* a tenth of a point.
 
@@ -189,7 +197,7 @@ That number is doing more work than it looks. The obvious way to handle bad ligh
 | p(red) on the varsity jacket | 27.8% | 36.6% |
 | p(blue) on the teal paisley | 23.2% | 9.8% |
 
-No improvement at all. I went in expecting a fix and came out with something better: the correction was already inside the weights. The augmentation pipeline taught the model colour constancy during training, so at inference it's one forward pass with no illuminant estimation, no CLAHE, and no LAB round-trip in the hot path.
+No improvement at all. I went in expecting a fix and came out with something better: the correction was already inside the weights. The augmentation pipeline taught the model color constancy during training, so at inference it's one forward pass with no illuminant estimation, no CLAHE, and no LAB round-trip in the hot path.
 
 A classical pipeline would need all of that per frame, and it would still need a hand-written rule for where white becomes gray. Moving that work from runtime into training is the whole reason 6.9 ms is achievable at all.
 
@@ -209,19 +217,19 @@ Three of five correct. The failures are the interesting part:
 
 An unambiguously green sweater returned `yellow 52%, olive 45%, green 2.3%`. I went in expecting to find a hole in the data and found something more interesting.
 
-The sweater sits at CIELAB `L*=57.6, a*=-16.1, b*=27.1`. Its nearest category centroid **is green**. The library even contains a near-exact match at **dE 4.2**, labelled green. So the taxonomy is right and the training data exists.
+The sweater sits at CIELAB `L*=57.6, a*=-16.1, b*=27.1`. Its nearest category centroid **is green**. The library even contains a near-exact match at **dE 4.2**, labeled green. So the taxonomy is right and the training data exists.
 
-The problem is *how often that colour gets drawn.*
+The problem is *how often that color gets drawn.*
 
 ![The green decision boundary](documentation/figures/green_boundary.png)
 
-The generator samples within a category weighted by `(1 / mahalanobis_distance)²`, so prototypical colours dominate. The three most central greens take **24.8%** of all green draws. Only **2 of 25** library greens sit below 135° of hue, and together they take **4.1%**.
+The generator samples within a category weighted by `(1 / mahalanobis_distance)²`, so prototypical colors dominate. The three most central greens take **24.8%** of all green draws. Only **2 of 25** library greens sit below 135° of hue, and together they take **4.1%**.
 
-So the model learned a green/yellow boundary at ~135°, while the library says green starts at **117.7°**. Feed it `#8b9a5f`, a colour lifted straight from its own green training set, as a flat patch and it answers **yellow, 96%**. The model contradicts its own labels in that band because it barely ever saw that band.
+So the model learned a green/yellow boundary at ~135°, while the library says green starts at **117.7°**. Feed it `#8b9a5f`, a color lifted straight from its own green training set, as a flat patch and it answers **yellow, 96%**. The model contradicts its own labels in that band because it barely ever saw that band.
 
 **The decision boundary contracted toward the centroid.**
 
-And here's the part I keep thinking about. The confusion-aware Voronoi resampling I built to separate confusable categories did exactly what I designed it to do: green and yellow now overlap over a 0.5° band containing one colour each. The library has a genuinely crisp edge. But a crisp edge in the library doesn't produce a crisp edge in the model, because prototype-biased sampling then starves the region right up against it. Clean data plus centroid-weighted sampling gives you a boundary that is both fuzzy and displaced inward.
+And here's the part I keep thinking about. The confusion-aware Voronoi resampling I built to separate confusable categories did exactly what I designed it to do: green and yellow now overlap over a 0.5° band containing one color each. The library has a genuinely crisp edge. But a crisp edge in the library doesn't produce a crisp edge in the model, because prototype-biased sampling then starves the region right up against it. Clean data plus centroid-weighted sampling gives you a boundary that is both fuzzy and displaced inward.
 
 I would not have found this without the instrumentation from section 4, and I think it's the most useful thing the project taught me.
 
@@ -255,8 +263,8 @@ The same problem shows up in retail analytics, wardrobe apps, and dataset triage
 
 - **Boundary-aware sampling.** Replace inverse-Mahalanobis weighting with uniform-within-category, or deliberately oversample near boundaries. This is a data-side fix, which is consistent with how the rest of the project approached its problems.
 - **Expand the taxonomy** to cover cyan and teal, and to split navy from blue.
-- **Fine-tune on real photographs.** Synthetic pretraining followed by a small real fine-tune is a well-established pattern, and a few hundred labelled images would likely close much of the remaining gap.
-- **A real sim2real benchmark.** The [Clothing Attributes Dataset](https://purl.stanford.edu/tb980qz1002) (1,856 photographs, 11 colour attributes) is the obvious candidate.
+- **Fine-tune on real photographs.** Synthetic pretraining followed by a small real fine-tune is a well-established pattern, and a few hundred labeled images would likely close much of the remaining gap.
+- **A real sim2real benchmark.** The [Clothing Attributes Dataset](https://purl.stanford.edu/tb980qz1002) (1,856 photographs, 11 color attributes) is the obvious candidate.
 
 ---
 
@@ -281,7 +289,7 @@ pip install -r requirements.txt
 | Distil and quantize | `python scripts/distill.py --teacher checkpoints/runB_best.pth` |
 | Compare all versions | `python scripts/evaluate_all.py` |
 
-Add `--no-pose` to any inference command to skip YOLO entirely. It uses a centre crop instead, and avoids the only copyleft dependency in the project.
+Add `--no-pose` to any inference command to skip YOLO entirely. It uses a center crop instead, and avoids the only copyleft dependency in the project.
 
 ### Notebooks
 
@@ -292,10 +300,10 @@ Numbered in pipeline order. A `_v1` or `_v2` suffix marks the two stages that go
 | `01_taxonomy.ipynb` | Builds the 13-category taxonomy from ISCC-NBS |
 | `02_taxonomy_preview.ipynb` | Visualizes category centroids and Mahalanobis-ranked members in CIELAB |
 | `03_backgrounds.ipynb` | Normalizes IndoorCVPR_09 backgrounds |
-| `04_synthesis_v1.ipynb` | V1 dataset generation (4 patterns, 286 colours) |
+| `04_synthesis_v1.ipynb` | V1 dataset generation (4 patterns, 286 colors) |
 | `05_training_v1.ipynb` | V1 ResNet-50 training |
 | `06_finetuning_v1.ipynb` | V1 adaptive fine-tuning |
-| `07_color_library_v2.ipynb` | Confusion-aware Voronoi resampling into 325 colours |
+| `07_color_library_v2.ipynb` | Confusion-aware Voronoi resampling into 325 colors |
 | `08_synthesis_v2.ipynb` | V2 dataset generation (7 patterns) |
 | `09_training_v2.ipynb` | V2 adaptive training |
 | `10_distill_quantize_v2.ipynb` | Distillation and INT8 |
@@ -307,17 +315,17 @@ Numbered in pipeline order. A `_v1` or `_v2` suffix marks the two stages that go
 |---|---|
 | [`docs/curriculum-design.md`](docs/curriculum-design.md) | Why the generator records its own parameters, why the probe is one-factor-at-a-time, why each augmentation distribution has the shape it does |
 | [`docs/results.md`](docs/results.md) | The experimental ledger. Every run, every metric, every defect found and corrected |
-| [`NOTICE.md`](NOTICE.md) | Third-party licences, including the AGPL boundary around the optional pose dependency |
+| [`NOTICE.md`](NOTICE.md) | Third-party licenses, including the AGPL boundary around the optional pose dependency |
 
 ---
 
 ## References
 
-**Colour science and the taxonomy**
+**Color science and the taxonomy**
 
-- Munroe, R. (2010). [**Colour Survey Results.**](https://blog.xkcd.com/2010/05/03/color-survey-results/) The survey that started this.
+- Munroe, R. (2010). [**Color Survey Results.**](https://blog.xkcd.com/2010/05/03/color-survey-results/) The survey that started this.
 - [**The ISCC-NBS Colour System.**](https://www.munsellcolorscienceforpainters.com/ISCCNBS/ISCCNBSSystem.html) The 13 base categories and their modifiers.
-- Centore, P. (2016). [**sRGB Centroids for the ISCC-NBS Colour System.**](https://munsellcolorscienceforpainters.com/ColourSciencePapers/sRGBCentroidsForTheISCCNBSColourSystem.pdf) Source data for the colour library. The underlying values originate in NBS Special Publication 440 (Kelly & Judd), a US Government publication in the public domain.
+- Centore, P. (2016). [**sRGB Centroids for the ISCC-NBS Colour System.**](https://munsellcolorscienceforpainters.com/ColourSciencePapers/sRGBCentroidsForTheISCCNBSColourSystem.pdf) Source data for the color library. The underlying values originate in NBS Special Publication 440 (Kelly & Judd), a US Government publication in the public domain.
 
 **Soft labels and the learning formulation**
 
@@ -337,10 +345,10 @@ Numbered in pipeline order. A `_v1` or `_v2` suffix marks the two stages that go
 
 - Quattoni, A., & Torralba, A. (2009). **Recognizing Indoor Scenes.** *CVPR*. Background imagery. MIT's own download is dead as of August 2026, so this project uses the [HuggingFace mirror](https://huggingface.co/datasets/u5753411/MIT-Indoor-Scenes).
 - Chen, H., Gallagher, A., & Girod, B. (2012). **Describing Clothing by Semantic Attributes.** *ECCV*. The [Clothing Attributes Dataset](https://purl.stanford.edu/tb980qz1002), and the candidate sim2real benchmark.
-- Jocher, G., et al. **Ultralytics YOLO.** Pose estimation for torso localisation. AGPL-3.0; see [`NOTICE.md`](NOTICE.md) for the licence boundary.
+- Jocher, G., et al. **Ultralytics YOLO.** Pose estimation for torso localisation. AGPL-3.0; see [`NOTICE.md`](NOTICE.md) for the license boundary.
 
 ---
 
-## Licence
+## License
 
 MIT, see [LICENSE](LICENSE). Third-party terms in [NOTICE.md](NOTICE.md). The dataset generator, training pipeline, and the trained model carry no copyleft dependency. Only the optional pose-detection path does.

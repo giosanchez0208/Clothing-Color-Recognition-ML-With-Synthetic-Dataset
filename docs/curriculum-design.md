@@ -7,35 +7,34 @@
 ## The one-sentence version
 
 If the generator records **what it did to every image**, then validation loss stops
-being a single number and becomes a **map of where the model is weak** — and
-anything you can map, you can target.
+being a single number and becomes a **map of where the model is weak**. Anything
+you can map, you can target.
 
 ---
 
 ## Where this idea comes from
 
-This is not a new method. It is V2's method pointed at a second axis.
+This is V2's method pointed at a second axis.
 
 **V2 (already built).** V1's confusion matrix showed the model mixing up orange and
 yellow. Rather than accept that, the pipeline measured the confusion, then reshaped
-the *colour library* to widen the gap exactly where the model was failing — pair-specific
-Voronoi margins derived from real measured confusion. Result: 0.7474 → 0.5942, from
-data alone.
+the *color library* to widen the gap exactly where the model was failing, using
+pair-specific Voronoi margins derived from real measured confusion. Result:
+0.7474 → 0.5942, from data alone.
 
 **V3 (this document).** The same loop, applied to **photometric space** instead of
-**colour space**:
+**color space**:
 
 | | V2 | V3 |
 |---|---|---|
-| Measure | confusion matrix over colour categories | loss curve over augmentation axes |
+| Measure | confusion matrix over color categories | loss curve over augmentation axes |
 | Diagnose | "orange/yellow boundary is weak" | "the model is weak under warm light" |
 | Act | widen Voronoi margin for that pair | oversample / regenerate along that axis |
-| Domain | which colours exist in the data | what is done to the image |
+| Domain | which colors exist in the data | what is done to the image |
 
-The point of the symmetry is that this stops being a bag of tricks and becomes a
-single method: **measure where the model fails, reshape the data to attack exactly
-there, repeat.** V2 is one instance. V3 is a second instance. That is the
-contribution, and it is worth saying out loud.
+The symmetry is what collapses two ad-hoc fixes into one method: **measure where
+the model fails, reshape the data to attack exactly there, repeat.** V2 applies it
+to color space. V3 applies it to photometric space.
 
 ---
 
@@ -50,27 +49,27 @@ return img_float * factor          # factor is now gone forever
 
 Every augmentation samples a number describing exactly how hard it made the image,
 uses it, and discards it. Once it's gone, the only thing left is the image and its
-label — so the only questions you can ask are *"is the model good?"* and *"on which
-colour?"* You cannot ask *"under which conditions?"*, because the conditions were
+label, so the only answerable questions are *"is the model good?"* and *"on which
+color?"* You cannot ask *"under which conditions?"*, because the conditions were
 never written down.
 
 Keeping that number is a plumbing change. What it buys is a different class of question:
 
 - Which axis is the model weakest on?
-- *Where* on that axis does it break — gradually, or past a cliff?
+- *Where* on that axis does it break: gradually, or past a cliff?
 - Is the weakness real, or noise?
 - Did the last intervention actually fix it?
 
 None of these are answerable without the metadata. All of them are trivial with it.
-That asymmetry — near-zero cost, whole new category of question — is why this is
-worth doing even if the curriculum itself turns out not to help.
+Near-zero cost for a whole new category of question is why this is worth doing
+even if the curriculum itself turns out not to help.
 
 ---
 
 ## Why one dataset, not several
 
 The intuitive design is a ladder of datasets: easy, medium, hard, brutal. Train
-through them in order. It is intuitive and it is the wrong shape.
+through them in order. That design has three problems.
 
 **It bakes the curriculum in at generation time.** The schedule becomes a property of
 bytes on disk. Changing your mind about pacing means regenerating everything.
@@ -84,14 +83,14 @@ The alternative: **one dataset, every sample carrying its parameters, and the
 curriculum expressed as a sampling policy over it.**
 
 The dataset becomes a fixed, reusable asset. The curriculum becomes a few lines of
-sampler logic. Changing the schedule costs a rerun of the loop, not a regeneration
-of 22,000 images — which means you can actually afford to run ablations, and
-ablations are what turn an idea into evidence.
+sampler logic. Changing the schedule costs a rerun of the loop rather than a
+regeneration of 22,000 images, which puts ablations inside the compute budget
+instead of outside it.
 
 **Principle: store raw parameters, derive difficulty at analysis time.** Do not bake
-a `difficulty` scalar into the CSV. The moment you want to reweight the axes — and
-you will — a stored scalar forces a regeneration while raw parameters cost a
-recompute. Store facts, derive opinions.
+a `difficulty` scalar into the CSV. The moment you want to reweight the axes, and
+you will, a stored scalar forces a regeneration while raw parameters cost a
+recompute.
 
 ---
 
@@ -105,8 +104,8 @@ model bad at low brightness?" by filtering to dark images. That slice is *also* 
 slice of blurred, shadowed, hue-shifted, JPEG-crushed images. Every confound rides
 along. You measure a correlation and learn nothing causal.
 
-You cannot fix this by slicing harder. The information isn't there — the axes were
-never varied independently.
+Slicing harder does not help. The information is absent from the data itself,
+because the axes were never varied independently.
 
 So: a small **one-factor-at-a-time probe set**. Sweep one axis across its range,
 hold every other axis at neutral, ~25 images per cell, plus a neutral control group.
@@ -116,12 +115,9 @@ hold every other axis at neutral, ~25 images per cell, plus a neutral control gr
 - Because only one thing varies, differences are **attributable**
 
 What comes out is a **response curve per axis**: loss as a function of brightness,
-of hue shift, of JPEG quality — each measured against the same neutral baseline.
-That tells you not just *which* axis is weak, but *where on it* and *how sharply* —
-a gentle slope and a cliff at one end call for completely different fixes.
-
-Ten small response curves with the weak one highlighted is also, bluntly, a very
-good figure.
+of hue shift, of JPEG quality, each measured against the same neutral baseline.
+That gives *which* axis is weak, *where on it*, and *how sharply*. A gentle slope
+and a cliff at one end call for completely different fixes.
 
 ---
 
@@ -142,8 +138,8 @@ The split of responsibilities:
 | `val` | full stochastic, **frozen** | the one comparable headline number |
 | `probe` | one-factor-at-a-time, **frozen** | diagnosis: which axis, where, how badly |
 
-The curriculum changes *what the model sees*, never *what it is graded on*. That
-separation is what keeps the experiment honest.
+The curriculum changes *what the model sees*, never *what it is graded on*. Without
+that separation there is nothing left to compare a run against.
 
 ---
 
@@ -155,36 +151,41 @@ present since V1.
 ### Hue and saturation were entangled
 
 In V1/V2 both live inside `_augment_color_jitter`, behind a **single** `p=0.5` gate.
-They always fired together — correlation exactly +1.0.
+They always fired together, correlation exactly +1.0.
 
 Two perfectly correlated variables cannot be told apart, by any amount of analysis.
-"The model struggles with hue" was not merely unmeasured, it was **unmeasurable** —
-structurally unfalsifiable given how the data was made.
+"The model struggles with hue" was **structurally unfalsifiable** given how the data
+was made.
 
 Fixed by giving them independent gates. Measured correlation dropped from an implied
-+1.000 to −0.040. This is the difference between a diagnosis and a guess.
++1.000 to −0.040, which is the threshold at which the two axes become separately
+attributable.
 
 ### The fold texture was unseedable
 
 `generate_synthetic_clothing_folds()` → `_fbm_perlin(seed=None)` → `np.random.default_rng(None)`.
 
 `default_rng(None)` draws from OS entropy. It does **not** inherit `np.random.seed()`.
-So even pinning every global RNG left the Perlin fold texture non-deterministic — and
+So even pinning every global RNG left the Perlin fold texture non-deterministic, and
 the fold texture covers most of the garment patch.
 
 This is the concrete reason the original 22,000 V2 images can never be reproduced,
-even with the colour library recovered bit-for-bit. Fixed by threading a seed through.
-Now every image is reproducible from its `seed` column alone, individually, which
-also makes debugging a single bad sample tractable.
+even with the color library recovered bit-for-bit. Fixed by threading a seed through.
+Any single image can now be regenerated on its own from the row that describes it,
+which makes debugging one bad sample tractable. For `train`, `val` and `test` the
+`seed` column is sufficient and unique. For `probe` rows it takes `seed` plus
+`probe_axis` and `probe_value`, because the paired design renders one base seed at
+81 different cells on purpose; `split` also matters, since each split draws
+backgrounds from its own disjoint pool.
 
-Worth noting the shape of both bugs: they were invisible while the pipeline only
-produced images, and obvious the moment it had to explain itself.
+Both defects share a shape. They were invisible while the pipeline only produced
+images, and obvious the moment it had to report what it had done.
 
 ---
 
 ## The controller
 
-### Something already owns augmentation intensity — and it disagrees
+### Something already owns augmentation intensity, and it disagrees
 
 The V2 training loop contains this:
 
@@ -199,17 +200,17 @@ it turns augmentation up as a regularizer.
 A curriculum reads the same signal in the opposite direction: improving → advance →
 harder.
 
-On the "val improved" branch these directly contradict — one turns intensity down
+On the "val improved" branch these directly contradict: one turns intensity down
 while the other turns it up. Left in place together, they oscillate and produce a
 training curve nobody can explain.
 
 **Resolution: the curriculum owns intensity.** The old controller's *signal* is
 retained, but it feeds the advancement decision instead of steering augmentation
-directly. One owner per knob.
+directly, leaving exactly one owner per knob.
 
 ### Advancing, carefully
 
-The natural rule — *advance when performance is good or when it stalls* — is half
+The natural rule, *advance when performance is good or when it stalls*, is half
 right. The competence half is sound. The stagnation half has a failure mode worth
 respecting: **stagnation is ambiguous.** The model may be stuck because the current
 difficulty is *already too hard*. Advancing then makes it strictly worse, and the run
@@ -226,11 +227,11 @@ to a run that is ready.
 
 ### Acting on a diagnosis
 
-**Within a run** — `WeightedRandomSampler` over the train split, upweighting samples
+**Within a run.** `WeightedRandomSampler` over the train split, upweighting samples
 loaded on the weak axis. All metadata is already in `labels.csv`; no regeneration.
-Nearly free, so it's the right first experiment.
+Nearly free, so it is the right first experiment.
 
-**Across runs** — widen that axis's sampling range or raise its fire probability, and
+**Across runs.** Widen that axis's sampling range or raise its fire probability, and
 regenerate. This is precisely the V1→V2 move, one level down. Expensive, so only
 worth it once the cheap version shows the signal is real.
 
@@ -238,8 +239,8 @@ worth it once the cheap version shows the signal is real.
 
 ## The statistical trap
 
-**With ten axes, one of them is always the worst.** That is what "ten" means. In a
-perfectly balanced model, one axis still comes last by pure sampling noise.
+**With ten axes, one of them is always the worst.** In a perfectly balanced model,
+one axis still comes last by pure sampling noise.
 
 React to that every round and you will chase ghosts, generate a great deal of
 activity, and confidently report progress that is indistinguishable from a random
@@ -253,8 +254,8 @@ Two cheap guards, both worth having:
 2. **Persistence.** It must rank weakest on **two consecutive** evaluations before
    anything is acted on.
 
-Neither is expensive. Together they are most of the difference between a feedback
-loop and a superstition.
+Neither is expensive, and together they separate acting on a measured effect from
+acting on rank order alone.
 
 ---
 
@@ -269,21 +270,20 @@ The comparison is one dataset, two runs, one variable:
 
 Success is not only "B beats A on val loss." Also informative:
 
-- **B's probe curves are flatter** — even at equal mean loss, more uniform competence
+- **B's probe curves are flatter.** Even at equal mean loss, more uniform competence
   across axes is a real improvement and shows up nowhere in a scalar metric
-- **B reaches A's final loss in fewer epochs** — a convergence-speed win is still a win
-- **B is no better** — a genuine null result, and worth reporting
+- **B reaches A's final loss in fewer epochs.** A convergence-speed win is still a win
+- **B is no better.** A genuine null result, and worth reporting
 
 That last one deserves emphasis. Curriculum learning has a **mixed empirical record**.
-This model starts from ImageNet weights that already carry strong low-level colour
-features, so the headroom may be small. Even odds, honestly.
+This model starts from ImageNet weights that already carry strong low-level color
+features, so the headroom may be small.
 
-But the README already reports the V1 fine-tuning null result — every trick in the
-book moving val loss by 0.0005 — and that honesty is one of the strongest things in
-the document. "I built the diagnostic, ran the experiment, and it bought me nothing;
-here are the curves" is a better artifact than a vague claim of improvement. The
-probe set is valuable regardless of which way the result lands, because it turns an
-untestable intuition into a measurement.
+The README already reports the V1 fine-tuning null result, every trick in the book
+moving val loss by 0.0005. "I built the diagnostic, ran the experiment, and it
+bought me nothing; here are the curves" is a reportable outcome with a reproducible
+figure behind it. The probe set holds its value regardless of which way the run
+lands, because it converts an untestable intuition into a measurement.
 
 ---
 
@@ -297,7 +297,7 @@ argument for having built the instrument at all.
 ### The probe was unpaired, and its baseline was biased
 
 **Symptom.** At convergence, **six of ten axes scored *below* the control
-baseline** — i.e. adding an augmentation apparently made the model *better*
+baseline**, meaning an augmentation apparently made the model *better*
 than leaving the image alone. That is impossible for a genuine control.
 
 **Cause.** `probe_plan` gave every cell its own randomly generated garment, so
@@ -308,7 +308,7 @@ the control group and the swept groups contained entirely different images
 |---|---:|---:|
 | label entropy | 0.2978 | 0.2743 |
 | solid garments | 20.5% | 24.4% |
-| colours per garment | 2.81 | 2.62 |
+| colors per garment | 2.81 | 2.62 |
 
 So "loss above control" was measuring *augmentation effect + content
 difference*, and for the near-free axes the content term dominated.
@@ -332,8 +332,8 @@ slowly. After the fix, control and swept content match to **−0.00000** entropy
 | blur | −0.1285 | +0.0185 | +0.147 |
 | jpeg | −0.1430 | −0.0562 | +0.087 |
 
-Every cost was understated, and **saturation and brightness swapped rank** —
-the unpaired reading had them in the wrong order. A curriculum built on it
+Every cost was understated, and **saturation and brightness swapped rank**: the
+unpaired reading had them in the wrong order. A curriculum built on it
 would have targeted the wrong axis.
 
 The paired curves also self-validate: brightness at ×1.0, saturation at ×1.0,
@@ -341,12 +341,12 @@ hue at 0° and temperature at 0 all return **exactly 0.000**, because the
 identity value of an axis *is* the control. An unpaired design cannot produce
 that guarantee.
 
-Two axes (`jpeg` −0.056, `noise` −0.059) remain slightly negative. That is not
-a content artifact but a real distribution effect: half of all training images
+Two axes (`jpeg` −0.056, `noise` −0.059) remain slightly negative. Pairing rules
+out content bias, which leaves a distribution effect: half of all training images
 carry an extra JPEG pass or noise, so a perfectly clean image is *rarer* than a
 mildly degraded one and sits marginally out-of-distribution.
 
-## Ablation: how much regularisation was the live augmentation providing?
+## Ablation: how much regularization was the live augmentation providing?
 
 V1 and V2 applied `ColorJitter` + `RandomColorTemperature` at load time, on top
 of the augmentation already baked into each JPEG. Two properties of that layer
@@ -355,7 +355,7 @@ were unknown and worth separating:
 1. **How much of the photometric variance does it carry?** If most, then the
    recorded metadata describes only a fraction of what the model sees, and any
    curriculum steering by metadata is steering a disconnected wheel.
-2. **How much regularisation is it providing?** Unknown, because it had never
+2. **How much regularization is it providing?** Unknown, because it had never
    been run without.
 
 Question 1 is answerable analytically. Baked brightness fires at p=0.5 from
@@ -376,34 +376,34 @@ the live layer removed and nothing else changed.
 
 **Result.** Train 0.6728 vs val 0.9365, with the train/val gap widening
 monotonically from 0.048 (epoch 10) to 0.264 (epoch 80) and val flat from about
-epoch 60. That is under-regularisation, and it quantifies the live layer's
+epoch 60. That is under-regularization, and it quantifies the live layer's
 contribution: without it the model overfits progressively.
 
 Both properties are wanted. Neither configuration provides both.
 
 **Resolution.** `utils/controlled_augment.ControlledPhotometric` keeps the live
 layer but moves ownership of its intensity from torchvision to the *trainer*.
-The loop sets a strength per axis, so it knows exactly what was applied — the
+The loop sets a strength per axis, so it knows exactly what was applied. The
 controller **is** the record, and nothing needs logging.
 
 This is also a better curriculum lever than the original plan. Weighted
 sampling would nudge the distribution indirectly, by oversampling images that
 happen to carry a large baked shift; a strength dial acts on the axis directly.
 "The probe says hue is weak" becomes "raise hue strength", and the axes
-deliberately mirror the probe axes so diagnosis and lever speak one language.
+deliberately mirror the probe axes so diagnosis and lever use the same names.
 
 Hue and saturation keep **separate probability gates**, preserving the
 independence the original pipeline destroyed.
 
 The follow-up run (A2) restores the layer under trainer control with everything
-else held fixed, isolating the regularisation effect from every other change.
+else held fixed, isolating the regularization effect from every other change.
 
 ---
 
 ## Why each distribution has the shape it has
 
-Every axis declares an intended distribution. That declaration is not
-decoration — it is what makes the sampler *testable*. Section 5 of the dataset
+Every axis declares an intended distribution, and that declaration is what makes
+the sampler *testable*. Section 5 of the dataset
 audit runs a Kolmogorov-Smirnov test of each axis against its declared shape,
 so a sampler that fires at the right rate but draws from the wrong shape gets
 caught. An axis with no declared intent cannot be wrong, which also means it
@@ -420,13 +420,13 @@ That single rule explains every choice below.
 |---|---|---|
 | `brightness` | truncated normal | Real cameras aim for correct exposure and mostly succeed. Failures are occasional and symmetric-ish. Mass belongs near 1.0. |
 | `saturation` | truncated normal | Same logic: scenes cluster near their natural saturation; heavy wash-out and heavy boost are both unusual. |
-| `blur` | half-normal | Most photographs are roughly in focus. Focus error has a hard floor at zero and a decaying tail — that is a half-normal, not a bell. |
+| `blur` | half-normal | Most photographs are roughly in focus. Focus error has a hard floor at zero and a decaying tail, so the density is half-normal. |
 | `temperature` | uniform | There is no single "correct" illuminant across a dataset of many rooms. Tungsten, fluorescent and daylight are all common. No value is privileged. |
-| `hue` | uniform | This one simulates nothing physical — it is a deliberate regulariser stopping the model from over-fitting exact hue values. With no physical process to mimic, no offset deserves more mass than another. |
+| `hue` | uniform | This one simulates nothing physical. It is a deliberate regularizer stopping the model from over-fitting exact hue values. With no physical process to mimic, no offset deserves more mass than another. |
 | `shadow` | uniform | Shadow strength in real rooms varies continuously with no modal value. |
 | `noise` | uniform | Sensor noise scales with ISO, which varies arbitrarily across sources. Uniform over a narrow band is an honest simplification. |
 | `jpeg` | discrete uniform | Compression quality is a pipeline setting, not a physical quantity. Arbitrary across sources. |
-| `specular`, `vignette` | uniform | Fabric sheen and lens falloff vary by material and optics; no modal value to centre on. |
+| `specular`, `vignette` | uniform | Fabric sheen and lens falloff vary by material and optics; no modal value to center on. |
 
 ### Why not uniform everywhere
 
@@ -448,30 +448,30 @@ much closer to the mean, so the desaturated end terminates against a hard wall
 with real density piled at it, while the oversaturated end tapers smoothly to
 zero.
 
-This is not a defect, but it has a consequence worth carrying into the analysis:
-desaturation drives colours toward gray, which is precisely the white/gray
-confusion boundary the model already struggles with. The one axis with an
-asymmetric hard edge points directly at a known weak spot.
+The asymmetry is intended, and it carries a consequence into the analysis:
+desaturation drives colors toward gray, which is precisely the white/gray
+confusion boundary the model already struggles with. So the one axis with an
+asymmetric hard edge piles its density against a known weak spot.
 
 **Blur has a point mass at its easy end.** The sampler is
 `clip(|N(0, 0.5)|, 0.1, 1.5)`, and `clip` maps *everything* below 0.1 onto
 exactly 0.1 rather than resampling. Measured consequences:
 
 - **15.8%** of blur draws are exactly σ = 0.1 (theory: 15.85%)
-- **45%** of blur draws are σ < 0.3, which is sub-pixel on a 224px image — i.e.
-  visually nothing
+- **45%** of blur draws are σ < 0.3, which is sub-pixel on a 224px image and
+  therefore visually nothing
 
 So blur nominally fires half the time, but roughly half of those are
 imperceptible and a sixth are literally the same number. The axis is weaker
-than its declared 0.1–1.5 range suggests, and its easy end is a spike rather
-than a gradient.
+than its declared 0.1–1.5 range suggests, and its easy end is a spike where the
+declared range implies a gradient.
 
 Impact is bounded: the probe set *forces* specific σ values, so blur response
 curves are unaffected and the diagnostic instrument stays clean. Only the
 training distribution is lumpy, which matters if you weight-sample toward low
 blur and get a clump of identical images.
 
-The fix is one line — a genuine truncated half-normal instead of a clip:
+The fix is one line, a genuine truncated half-normal instead of a clip:
 
 ```python
 sigma = float(stats.truncnorm.rvs(0.2, 3.0, loc=0.0, scale=0.5))
@@ -491,19 +491,19 @@ phenomena, and the picture alone gets both backwards:**
 | | `blur` | `jpeg` |
 |---|---|---|
 | What you see | tall spike at the low end | regular spikes every ~9 units |
-| What it is | **a real point mass** — 15.8% of draws share one value | **a histogram artifact** — the data is perfectly uniform |
+| What it is | **a real point mass**: 15.8% of draws share one value | **a histogram artifact**: the data is perfectly uniform |
 | Evidence | matches analytic P(\|N(0,0.5)\| < 0.1) = 0.1585 | 46 distinct integers, chi-square p = 0.455 |
 | Fix | change the sampler | change the bin count |
 
 The JPEG artifact arises because quality takes 46 integer values and the plot
 originally used 40 bins. At a bin width of 1.125 value-units, every ~8th bin
-swallows two integers and renders at double height — textbook moiré. Max/min
-bar ratio is **2.07** at 40 bins and **1.04** at 46.
+swallows two integers and renders at double height, which is textbook moiré.
+Max/min bar ratio is **2.07** at 40 bins and **1.04** at 46.
 
 The audit now auto-detects discrete axes and allocates one bin per value, so
-this no longer appears. The general lesson is worth keeping: **a spiky
-histogram is a question, not an answer.** Distinguishing a sampler defect from
-a rendering artifact requires testing the values, not looking at the picture.
+this no longer appears. The general lesson is worth keeping: **a spiky histogram
+is a question.** Separating a sampler defect from a rendering artifact takes a
+test on the values, which is something the picture cannot supply.
 
 ---
 
@@ -517,16 +517,16 @@ One row per image in `labels.csv`. `NaN` means the effect did not fire.
 |---|---|
 | `filename` | image file |
 | `split` | `train` / `val` / `probe` |
-| 13 colour columns | soft label, sums to 1.0 |
-| `seed` | per-image seed — regenerates this exact image alone |
+| 13 color columns | soft label, sums to 1.0 |
+| `seed` | generator seed. Unique per row in `train`/`val`/`test`; in `probe`, shared by the 81 renders of one base image |
 
 **Structure** (content difficulty, independent of photometrics)
 
 | Column | Meaning |
 |---|---|
 | `pattern` | solid / stripes / plaid / gradient / chevron / color_blocking / polka_dot |
-| `n_colors` | distinct colours in the garment patch |
-| `label_entropy` | Shannon entropy of the label, normalised to [0,1]. Free difficulty signal: solid = 0, four-colour plaid → 1 |
+| `n_colors` | distinct colors in the garment patch |
+| `label_entropy` | Shannon entropy of the label, normalized to [0,1]. Free difficulty signal: solid = 0, four-color plaid → 1 |
 | `fold_blend`, `fold_alpha` | fold texture blend mode and opacity |
 
 **Photometrics** (one column per axis; the diagnosis surface)
@@ -552,7 +552,7 @@ One row per image in `labels.csv`. `NaN` means the effect did not fire.
 | `probe_axis` | which axis was swept (blank = control group) |
 | `probe_value` | the value it was held at |
 
-### One modelling note on temperature
+### One modeling note on temperature
 
 Temperature is stored as **two** raw scales, not one derived number, and that is
 deliberate. The meaningful warm/cool axis is `log(r_scale / b_scale)`:
@@ -562,7 +562,7 @@ deliberate. The meaningful warm/cool axis is `log(r_scale / b_scale)`:
 
 Collapsing them at write time would silently merge a brightness effect into the
 temperature axis and corrupt both response curves. Storing raw and deriving at
-analysis time costs nothing and keeps the axes clean — the same principle as not
+analysis time costs nothing and keeps the axes clean, on the same principle as not
 baking in a difficulty scalar.
 
 ---

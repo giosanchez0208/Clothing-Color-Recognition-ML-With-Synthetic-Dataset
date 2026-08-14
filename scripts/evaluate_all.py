@@ -11,7 +11,7 @@ Consistency guarantees
 * The paired probe (all 4,860 renders) is likewise run in full.
 * Where a figure needs a subsample, it is drawn with a fixed seed.
 
-Ordering note: quantised models are CPU-only, and running CPU inference while a
+Ordering note: quantized models are CPU-only, and running CPU inference while a
 CUDA context is live faults on Windows (see docs/results.md). GPU models are
 therefore scored first, the GPU is released, and CPU models follow.
 
@@ -59,13 +59,13 @@ DEFAULT_DATA = os.path.join(PROJECT_ROOT, "datasets", "generated_v3")
 CKPT_DIR = os.path.join(PROJECT_ROOT, "checkpoints")
 OUT_DIR = os.path.join(PROJECT_ROOT, "reports", "eval")
 
-# (tag, checkpoint, human label) — order defines table/figure order
+# (tag, checkpoint, human label). Order defines table/figure order.
 REGISTRY = [
-    ("runA",    "runA_best.pth",             "Run A — ablation arm (no live aug, LR ×0.001)"),
-    ("runA2",   "runA2_best.pth",            "Run A2 — live aug restored (stopped @15, NOT converged)"),
-    ("runB",    "runB_best.pth",             "Run B — +flat LR, smoothing 0"),
-    ("student", "distilB_student_fp32.pth",  "Student FP32 — distilled from Run B"),
-    ("int8",    "distilB_student_int8.pth",  "Student INT8 — deployable"),
+    ("runA",    "runA_best.pth",             "Run A: ablation arm (no live aug, LR x0.001)"),
+    ("runA2",   "runA2_best.pth",            "Run A2: live aug restored (stopped @15, NOT converged)"),
+    ("runB",    "runB_best.pth",             "Run B: flat LR, smoothing 0"),
+    ("student", "distilB_student_fp32.pth",  "Student FP32: distilled from Run B"),
+    ("int8",    "distilB_student_int8.pth",  "Student INT8: deployable"),
 ]
 
 
@@ -73,16 +73,16 @@ def load_model(path):
     """Rebuild whatever the checkpoint declares. Returns (model, arch, cpu_only)."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
     arch = ck.get("architecture", "resnet50")
-    quantised = "int8" in arch
+    quantized = "int8" in arch
     if "mobilenet" in arch:
         m = create_student().eval()
-        if quantised:
+        if quantized:
             m = torch.quantization.quantize_dynamic(m, {nn.Linear}, dtype=torch.qint8)
     else:
         m = create_model()
     m.load_state_dict(ck["model_state_dict"])
     m.eval()
-    return m, arch, quantised
+    return m, arch, quantized
 
 
 @torch.no_grad()
@@ -152,7 +152,7 @@ def main():
     img_dir = os.path.join(args.data, "images")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # One parse, one dataset, fixed order — shared by every model.
+    # One parse, one dataset, fixed order, shared by every model.
     _, eval_tf = build_transforms(None)
     df = pd.read_csv(csv_path, low_memory=False)
     test_ds = ColorDataset(csv_path, img_dir, "test", eval_tf, df=df)
@@ -178,10 +178,10 @@ def main():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
         for tag, path, desc in available:
-            model, arch, quantised = load_model(path)
-            if quantised != cpu_only_phase:
+            model, arch, quantized = load_model(path)
+            if quantized != cpu_only_phase:
                 continue
-            dev = torch.device("cpu") if quantised else device
+            dev = torch.device("cpu") if quantized else device
             t0 = time.perf_counter()
             m, p, l = score(model, test_loader, dev)
             m["arch"] = arch
@@ -209,7 +209,7 @@ def main():
     L = []
     L.append("# Cross-Version Evaluation\n")
     L.append(f"All models scored on the **same {len(test_ds):,}-image held-out test "
-             f"split** — complete, not subsampled, identical order.\n")
+             f"split**, complete rather than subsampled, in identical order.\n")
     L.append("## Headline\n")
     L.append("| Model | KL | top-1 | MAE | Size | CPU ms |")
     L.append("|---|---:|---:|---:|---:|---:|")
@@ -219,17 +219,17 @@ def main():
                  f"| {r['size_mb']:.1f} MB | "
                  f"{r['cpu_ms']:.1f} |" if r["cpu_ms"] else
                  f"| {r['desc']} | {r['kl']:.4f} | {r['top1']:.1%} | {r['mae']:.4f} "
-                 f"| {r['size_mb']:.1f} MB | — |")
+                 f"| {r['size_mb']:.1f} MB | n/a |")
 
     L.append("\n## Per-class MAE\n")
-    L.append("| Colour | " + " | ".join(order) + " |")
+    L.append("| Color | " + " | ".join(order) + " |")
     L.append("|---" * (len(order) + 1) + "|")
     for i, c in enumerate(COLOR_CLASSES):
         L.append(f"| {c} | " + " | ".join(f"{results[t]['per_class_mae'][i]:.4f}"
                                           for t in order) + " |")
 
     if not args.skip_probe:
-        L.append("\n## Probe — paired cost per axis\n")
+        L.append("\n## Probe: paired cost per axis\n")
         L.append("| Axis | " + " | ".join(order) + " |")
         L.append("|---" * (len(order) + 1) + "|")
         for a in AXES:
@@ -251,7 +251,7 @@ def main():
     for i, t in enumerate(order):
         ax.bar(x + i * w - 0.4 + w / 2, results[t]["per_class_mae"], w, label=t)
     ax.set_xticks(x); ax.set_xticklabels(COLOR_CLASSES, rotation=45, ha="right")
-    ax.set_ylabel("MAE"); ax.set_title("Per-class MAE — identical test split")
+    ax.set_ylabel("MAE"); ax.set_title("Per-class MAE on an identical test split")
     ax.legend(fontsize=8)
     plt.tight_layout()
     plt.savefig(os.path.join(args.out, "per_class_mae.png")); plt.close()
@@ -265,7 +265,7 @@ def main():
         ax.axhline(0, color="k", lw=0.8)
         ax.set_xticks(xa); ax.set_xticklabels(AXES, rotation=45, ha="right")
         ax.set_ylabel("paired cost vs own control")
-        ax.set_title("Per-axis robustness — identical probe set")
+        ax.set_title("Per-axis robustness on an identical probe set")
         ax.legend(fontsize=8)
         plt.tight_layout()
         plt.savefig(os.path.join(args.out, "probe_axes.png")); plt.close()
@@ -284,7 +284,7 @@ def main():
                     ax.text(j, i, f"{C[i,j]:.2f}", ha="center", va="center",
                             fontsize=5.5, color="black" if C[i, j] < 0.6 else "white")
         ax.set_xlabel("predicted probability →"); ax.set_ylabel("true class ↓")
-        ax.set_title(f"Soft confusion — {t}  (KL {results[t]['kl']:.4f})")
+        ax.set_title(f"Soft confusion, {t}  (KL {results[t]['kl']:.4f})")
         plt.colorbar(im, ax=ax, shrink=0.8)
         plt.tight_layout()
         plt.savefig(os.path.join(args.out, f"confusion_{t}.png")); plt.close()

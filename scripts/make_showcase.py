@@ -3,7 +3,7 @@ Build presentation figures for the synthetic data engine.
 
 These are deliberately separate from the audit figures in reports/figures/.
 The audit answers "is this dataset valid?"; these answer "what does this
-generator actually do?" — the second question is the one worth showing a
+generator actually do?". The second question is the one worth showing a
 reader who has thirty seconds.
 
 Outputs (reports/showcase/):
@@ -88,7 +88,7 @@ def fig_axes(gen, out_dir, seed, n_levels=7):
                                  fontweight="bold")
 
         for c, v in enumerate(probe_values(axis, n_levels)):
-            random.seed(seed + r * 100 + c)      # stabilise shadow direction etc.
+            random.seed(seed + r * 100 + c)      # stabilize shadow direction etc.
             np.random.seed(seed + r * 100 + c)
             out, _ = apply_single_axis(base, axis, v)
             ax = axes[r][c + 1]
@@ -138,7 +138,7 @@ def fig_patterns(gen, out_dir, seed, per_pattern=5):
                               va="center", labelpad=52, fontweight="bold")
 
     fig.suptitle("Garment pattern types\n"
-                 "labels are pixel-composition derived; H is normalised label entropy",
+                 "labels are pixel-composition derived; H is normalized label entropy",
                  fontsize=13, y=0.998)
     plt.tight_layout(rect=[0, 0, 1, 0.986])
     p = os.path.join(out_dir, "patterns.png")
@@ -198,7 +198,7 @@ def fig_pipeline(gen, out_dir, seed, n_examples=4):
     """background -> patch -> folded patch -> composite -> augmented."""
     from utils.instrumented_augment import apply_lighting
 
-    cols = ["1. background", "2. colour + pattern", "3. + fold texture",
+    cols = ["1. background", "2. color + pattern", "3. + fold texture",
             "4. composited", "5. + augmentation"]
     fig, axes = plt.subplots(n_examples, len(cols),
                              figsize=(2.15 * len(cols), 2.3 * n_examples))
@@ -231,7 +231,7 @@ def fig_pipeline(gen, out_dir, seed, n_examples=4):
         axes[r][4].set_xlabel(", ".join(f"{k} {v:.0f}%" for k, v in top2), fontsize=7)
 
     fig.suptitle("Generation pipeline, stage by stage\n"
-                 "the label is computed from stage 2's pixel composition — "
+                 "the label is computed from stage 2's pixel composition, "
                  "never from human judgement",
                  fontsize=13, y=0.999)
     plt.tight_layout(rect=[0, 0, 1, 0.982])

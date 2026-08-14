@@ -33,13 +33,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from utils.instrumented_generator import COLOR_CLASSES
-from scripts.predict import (BGR, Pose, TorchBackend, annotate, centre_box,
+from scripts.predict import (BGR, Pose, TorchBackend, annotate, center_box,
                              compose_input, report, softmax)
 
 IMG_DIR = os.path.join(PROJECT_ROOT, "documentation", "images")
 OUT_DIR = os.path.join(PROJECT_ROOT, "documentation", "figures")
 
-# Ground truth as a person would describe it — used only for honest captions.
+# Ground truth as a person would describe it, used only for honest captions.
 TRUTH = {
     "sample0.png": "heather grey tee",
     "sample1.jpg": "teal + white paisley",
@@ -48,7 +48,7 @@ TRUTH = {
     "sample4.jpg": "pale green sweater",
 }
 
-# matplotlib swatch colours for the probability bars
+# matplotlib swatch colors for the probability bars
 SWATCH = {c: tuple(v / 255 for v in BGR[c][::-1]) for c in COLOR_CLASSES}
 
 
@@ -59,7 +59,7 @@ def rgb(img):
 def run(path, backend, pose):
     frame = cv2.imread(path)
     boxes = pose(frame) if pose else []
-    person, torso = boxes[0] if boxes else (centre_box(frame),) * 2
+    person, torso = boxes[0] if boxes else (center_box(frame),) * 2
     batch, comp = compose_input(frame, torso)
     probs = softmax(backend(batch)[0])
     picks, ambiguous = report(probs)
@@ -68,7 +68,7 @@ def run(path, backend, pose):
 
 
 def bars(ax, probs, picks):
-    """Full 13-way distribution, each bar drawn in the colour it represents."""
+    """Full 13-way distribution, each bar drawn in the color it represents."""
     order = np.argsort(probs)[::-1]
     names = [COLOR_CLASSES[i] for i in order]
     vals = [probs[i] for i in order]
@@ -135,11 +135,11 @@ def main():
         axes[r][0].imshow(rgb(frame)); axes[r][0].axis("off")
         axes[r][0].set_title(TRUTH.get(name, name), fontsize=9, loc="left")
         axes[r][1].imshow(rgb(comp)); axes[r][1].axis("off")
-        axes[r][1].set_title("model input" + ("" if found else "  (no pose — centre crop)"),
+        axes[r][1].set_title("model input" + ("" if found else "  (no pose, center crop)"),
                              fontsize=8)
         bars(axes[r][2], probs, picks)
         axes[r][2].set_title("predicted distribution", fontsize=9)
-    fig.suptitle("Real photographs — trained on 100% synthetic data, "
+    fig.suptitle("Real photographs. Trained on 100% synthetic data, "
                  "never saw a real garment", fontsize=12, y=0.997)
     plt.tight_layout(rect=[0, 0, 1, 0.985])
     out2 = os.path.join(OUT_DIR, "real_results.png")
