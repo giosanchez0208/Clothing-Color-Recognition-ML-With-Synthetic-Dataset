@@ -54,6 +54,10 @@ Now, we could go into Blender and create a bunch of assets. That can even be don
 
 ## Summary
 
+**[Try it in your browser](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition)** · **[Model on HuggingFace](https://huggingface.co/giosanchez0208/clothing-color-recognition)**
+
+The demo runs both models client-side, the color model through ONNX Runtime Web and torso detection through MediaPipe Pose, so nothing you point the camera at leaves your machine. The color model measures around 25 ms per frame in WebAssembly, against 6.9 ms for the same weights natively.
+
 I built a system that predicts a **probability distribution over 13 color categories** instead of picking one label and committing to it. It was trained on **28,860 procedurally generated images** that try to imitate the kind of data my pipeline needs to predict a real-world shirt color.
 
 The final model is **4.2 MB** and runs a forward pass in **6.9 ms on CPU**.
@@ -288,8 +292,47 @@ pip install -r requirements.txt
 | Train | `python scripts/train.py --tag runB` |
 | Distil and quantize | `python scripts/distill.py --teacher checkpoints/runB_best.pth` |
 | Compare all versions | `python scripts/evaluate_all.py` |
+| Publish to HuggingFace | `python scripts/publish_hf.py --all --dry-run` |
 
 Add `--no-pose` to any inference command to skip YOLO entirely. It uses a center crop instead, and avoids the only copyleft dependency in the project.
+
+### The browser demo
+
+`web/` is the static site published as a HuggingFace Space. It has no build step and no server: ONNX Runtime Web fetches the 5.85 MB model over the CDN and runs it in the tab.
+
+```bash
+python -m http.server 8000 --directory web
+```
+
+Both model files are gitignored, so stage them before serving or publishing:
+
+```bash
+cp checkpoints/distilB_student.onnx web/model.onnx
+```
+
+```bash
+curl -o web/pose_landmarker_lite.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
+```
+
+Torso detection is MediaPipe Pose rather than YOLO, because MediaPipe is Apache-2.0 and a hosted demo importing an AGPL model would pull the deployment into copyleft. The two detectors give slightly different boxes, and that is the only place the demo departs from the Python reference. Given the same box, the composite and prediction match Python to 0.00 percentage points.
+
+Three things in `app.js` are worth knowing about, all of them found by measuring rather than reasoning, and all three invisible from the outside until measured.
+
+**It snapshots each frame to a canvas before either model touches it.** This was the bug that made the live demo look broken while the Python pipeline worked fine. Two faults compounded. MediaPipe read the `<video>` element unreliably, finding a pose in 3 or 4 frames out of 12 where the same content drawn to a canvas detects nearly always. And pose ran against the video while the crop read the video again *after* an `await`, so on a moving subject the box was computed from where the person had been and applied to where they now were. Taking one snapshot and handing that single buffer to both fixes both. Scored against `scripts/predict.py` on video: median IoU against the YOLO torso box went from unmeasurable to **0.863**, reaching 0.94 on frames where playback timing lines up.
+
+**It reimplements `cv2.INTER_AREA` by hand** instead of calling `drawImage` with a destination size. Canvas resamples on its own sub-pixel grid, offset from the box average OpenCV computes. The composite means still agree, because a phase shift preserves a mean, so the error hides from every summary statistic. It showed up as a 0.19 shift in the white logit and 0.32 in gray, turning 58.4% white into 51.5% white, on exactly the pair this model is weakest at.
+
+**It sets the pose detector's threshold to 0.8, not the 0.5 default.** MediaPipe's per-landmark `visibility` score looks like a detection confidence and is not one; it answers whether a joint is occluded *given* that a person was found. Fed a matplotlib figure from `reports/figures/`, it returned torso visibilities of 0.92 to 0.99, indistinguishable from a real person, and produced a torso box for a bar chart. Only the detector's own construction-time threshold rejects that.
+
+Detection runs in IMAGE mode on every frame, not VIDEO mode. VIDEO mode reuses tracking between frames and sounds like the right choice for a camera; measured on a real clip it was the worse one.
+
+One deployment quirk worth knowing, because the symptom looks like corrupted HTML and the cause is nowhere near it. A Space injects a `window.huggingface = {...}` script into `index.html` at serve time, and it computes the insertion offset as though the file used CRLF line endings. Against an LF file it lands early by exactly the number of newlines preceding `<head>`, splitting the tag into `<hea` + script + `d>`. The browser then abandons the head and renders the script source as visible text at the top of the page. `publish_hf.py` normalizes HTML to CRLF on upload, so an editor writing LF cannot reintroduce it.
+
+Publishing needs a `.env` at the repo root, which is gitignored:
+
+```bash
+printf 'hf_token=hf_...\nhf_username=your-name\n' > .env
+```
 
 ### Notebooks
 

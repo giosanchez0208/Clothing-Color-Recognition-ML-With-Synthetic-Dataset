@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clothing Color Recognition</title>
+<meta name="description" content="A MobileNetV3-Small that predicts a distribution over 13 color categories to discern confidence in each label. 5.85 MB, distilled from a ResNet-50, trained on procedurally generated images.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>Clothing Color Recognition</h1>
+  <p class="sub">
+    A MobileNetV3-Small that predicts a distribution over 13 color categories to
+    discern confidence in each label. 5.85&nbsp;MB, distilled from a ResNet-50,
+    trained on procedurally generated images.
+  </p>
+  <p class="sub">
+    The models used run locally, so nothing you point the camera at, and nothing
+    you upload, is sent anywhere.
+  </p>
+</header>
+
+<hr>
+
+<nav id="tabs">
+  <button id="tab-camera" class="tab" aria-pressed="false">camera</button>
+  <button id="tab-image" class="tab" aria-pressed="true">image</button>
+  <input type="file" id="file" accept="image/*" hidden>
+</nav>
+
+<p id="status" class="status">loading models…</p>
+
+<main>
+  <section class="panel">
+    <h2>1. source</h2>
+    <div class="frame">
+      <video id="video" playsinline muted hidden></video>
+      <img id="photo" alt="" hidden>
+      <canvas id="overlay"></canvas>
+      <p id="empty" class="empty">
+        Start the camera, or drop an image anywhere on this page.
+      </p>
+    </div>
+    <pre id="debug" class="debug" hidden></pre>
+  </section>
+
+  <section class="panel">
+    <h2>2. what the model sees</h2>
+    <div class="comp-wrap">
+      <canvas id="composite" class="blank" width="224" height="224"></canvas>
+      <p id="comp-empty" class="comp-empty">nothing yet</p>
+    </div>
+    <p class="note">
+      Each detected person is translated into a 112x112 crop of the torso pasted
+      into the middle of a wider 224x224 context crop.
+    </p>
+  </section>
+
+  <section class="panel wide">
+    <h2>3. prediction</h2>
+    <div id="bars" class="bars"></div>
+    <p id="verdict" class="verdict"></p>
+  </section>
+</main>
+
+<hr>
+
+<footer>
+  <dl class="metrics">
+    <div><dt>inference</dt><dd id="m-latency">not run</dd></div>
+    <div><dt>backend</dt><dd id="m-backend">loading</dd></div>
+    <div><dt>model</dt><dd>5.85 MB, opset 17</dd></div>
+    <div><dt>held-out top-1</dt><dd>67.4%</dd></div>
+  </dl>
+
+  <p class="note">
+    The latency above times the color model only, measured in this browser
+    through WebAssembly, so it is slower than the 6.9&nbsp;ms the same weights
+    reach natively on CPU. Torso detection runs separately and is not counted.
+  </p>
+
+  <p class="note">
+    Torso detection is MediaPipe Pose (Apache-2.0), not the AGPL pose model the
+    Python pipeline uses, so the boxes differ slightly between the two. Its
+    weights are served from this page rather than from Google, so no frame and
+    no request leaves your machine.
+  </p>
+
+  <p class="note">
+    Trained on synthetic data only, so it has never seen a real garment. It is
+    weakest where two categories meet: pale green against yellow, gray against
+    white. The write-up covers why, in detail.
+  </p>
+
+  <p class="links">
+    <a href="https://github.com/giosanchez0208/Clothing-Color-Recognition-ML-With-Synthetic-Dataset">source and write-up</a>
+    <a href="https://huggingface.co/giosanchez0208/clothing-color-recognition">model card</a>
+  </p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,284 @@
+/* Plain document. No cards, no shadows, no rounded corners, one accent.
+   Everything is a hairline rule or plain text on a plain ground. */
+
+:root {
+  --bg:      #ffffff;
+  --fg:      #16181a;
+  --muted:   #62676d;
+  --rule:    #d9dcdf;
+  --field:   #f2f3f4;
+  --accent:  #1c4f9c;
+  --warn:    #9c4a1c;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:     #121415;
+    --fg:     #e6e8ea;
+    --muted:  #949aa0;
+    --rule:   #2c3033;
+    --field:  #1b1e20;
+    --accent: #7aa8e8;
+    --warn:   #d99163;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* A `display` rule on a selector beats the UA stylesheet's [hidden] rule, so
+   the hidden <video> would still reserve space and push the overlay out of
+   alignment with the photo. Restate it with enough weight to win. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0 auto;
+  padding: 3rem 1.5rem 5rem;
+  max-width: 62rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 {
+  margin: 0 0 .6rem;
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  margin: 0 0 .7rem;
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+p { margin: 0 0 .8rem; }
+
+.sub { max-width: 46rem; color: var(--fg); }
+.sub strong { font-weight: 600; }
+
+.note {
+  margin-top: .8rem;
+  max-width: 34rem;
+  font-size: .82rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* ── tabs ─────────────────────────────────────────────────────────────── */
+
+nav {
+  display: flex;
+  gap: .4rem;
+  margin-bottom: 1rem;
+}
+
+.tab {
+  padding: .4rem .95rem;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: .88rem;
+  cursor: pointer;
+}
+
+.tab:hover { color: var(--fg); border-color: var(--fg); }
+
+.tab[aria-pressed="true"] {
+  color: var(--bg);
+  background: var(--fg);
+  border-color: var(--fg);
+}
+
+.status {
+  min-height: 1.2rem;
+  font-family: var(--mono);
+  font-size: .8rem;
+  color: var(--muted);
+}
+
+.status.err { color: var(--warn); }
+
+/* ── layout ───────────────────────────────────────────────────────────── */
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) auto;
+  gap: 2rem 2.5rem;
+  align-items: start;
+}
+
+.panel.wide { grid-column: 1 / -1; }
+
+@media (max-width: 780px) {
+  main { grid-template-columns: 1fr; }
+}
+
+/* ── source frame ─────────────────────────────────────────────────────── */
+
+.frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 8rem;
+  background: var(--field);
+  border: 1px solid var(--rule);
+  line-height: 0;
+}
+
+.frame video,
+.frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.empty {
+  margin: 0;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+  line-height: 1.5;
+  font-size: .85rem;
+  color: var(--muted);
+}
+
+.comp-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+#composite {
+  display: block;
+  width: 224px;
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  background: var(--field);
+  border: 1px solid var(--rule);
+}
+
+/* An empty composite is a real state, not a loading state: it means no torso
+   was found, so the model was shown nothing. */
+#composite.blank { background: var(--field); }
+
+.debug {
+  margin: .8rem 0 0;
+  padding: .6rem .7rem;
+  overflow-x: auto;
+  background: var(--field);
+  border: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: .72rem;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--fg);
+}
+
+.comp-empty {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.4;
+  font-size: .8rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* ── bars ─────────────────────────────────────────────────────────────── */
+
+.bars {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr 3.2rem;
+  gap: .18rem .7rem;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: .8rem;
+}
+
+.bars .name { color: var(--muted); text-align: right; }
+.bars .name.hit { color: var(--fg); font-weight: 600; }
+
+.bars .track {
+  height: .72rem;
+  background: var(--field);
+  border: 1px solid var(--rule);
+}
+
+.bars .fill {
+  height: 100%;
+  transition: width 90ms linear;
+}
+
+.bars .pct { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.bars .pct.hit { color: var(--fg); }
+
+.verdict {
+  margin-top: 1rem;
+  font-size: .95rem;
+}
+
+.verdict .amb { color: var(--warn); }
+
+/* ── footer ───────────────────────────────────────────────────────────── */
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2.5rem;
+  margin: 0 0 1.2rem;
+}
+
+.metrics div { margin: 0; }
+
+.metrics dt {
+  font-size: .72rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.metrics dd {
+  margin: .1rem 0 0;
+  font-family: var(--mono);
+  font-size: .95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.links {
+  margin-top: 1.4rem;
+  display: flex;
+  gap: 1.5rem;
+  font-size: .85rem;
+}
+
+a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
+a:hover { color: var(--fg); }
