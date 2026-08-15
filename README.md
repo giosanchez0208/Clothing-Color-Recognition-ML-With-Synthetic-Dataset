@@ -1,5 +1,7 @@
 # Clothing Color Recognition with Synthetic Data
 
+**[Live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition)** · **[Model](https://huggingface.co/giosanchez0208/clothing-color-recognition)** · **[Results](docs/results.md)**
+
 **"Just use the eyedropper tool!"** you might be telling me. Let me be the first to tell you that it's not that easy.
 
 ---
@@ -54,9 +56,7 @@ Now, we could go into Blender and create a bunch of assets. That can even be don
 
 ## Summary
 
-**[Try it in your browser](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition)** · **[Model on HuggingFace](https://huggingface.co/giosanchez0208/clothing-color-recognition)**
-
-The demo runs both models client-side, the color model through ONNX Runtime Web and torso detection through MediaPipe Pose, so nothing you point the camera at leaves your machine. The color model measures around 25 ms per frame in WebAssembly, against 6.9 ms for the same weights natively.
+The [live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition) runs both models client-side, the color model through ONNX Runtime Web and torso detection through MediaPipe Pose, so nothing you point the camera at leaves your machine. The color model measures around 25 ms per frame in WebAssembly, against 6.9 ms for the same weights natively.
 
 I built a system that predicts a **probability distribution over 13 color categories** instead of picking one label and committing to it. It was trained on **28,860 procedurally generated images** that try to imitate the kind of data my pipeline needs to predict a real-world shirt color.
 
