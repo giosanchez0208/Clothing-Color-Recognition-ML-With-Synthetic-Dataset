@@ -25,8 +25,8 @@
 <hr>
 
 <nav id="tabs">
-  <button id="tab-camera" class="tab" aria-pressed="false">camera</button>
-  <button id="tab-image" class="tab" aria-pressed="true">image</button>
+  <button id="tab-camera" class="tab" aria-pressed="false">start camera</button>
+  <button id="tab-image" class="tab" aria-pressed="false">upload image</button>
   <input type="file" id="file" accept="image/*" hidden>
 </nav>
 
@@ -40,7 +40,8 @@
       <img id="photo" alt="" hidden>
       <canvas id="overlay"></canvas>
       <p id="empty" class="empty">
-        Start the camera, or drop an image anywhere on this page.
+        Start the camera, or upload an image.
+        You can also drop one anywhere on this page.
       </p>
     </div>
     <pre id="debug" class="debug" hidden></pre>

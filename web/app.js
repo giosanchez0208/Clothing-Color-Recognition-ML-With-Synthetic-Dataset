@@ -597,7 +597,7 @@ async function boot() {
   }
 
   el.backend.textContent = `wasm, ${threads} thread${threads === 1 ? "" : "s"}`;
-  setStatus("both models ready, nothing loaded yet");
+  setStatus("both models ready. start the camera, or upload an image");
 
   el.tabCamera.onclick = startCamera;
   el.tabImage.onclick = () => el.file.click();
