@@ -1,6 +1,13 @@
 # Clothing Color Recognition with Synthetic Data
 
-**[Live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition)** · **[Model](https://huggingface.co/giosanchez0208/clothing-color-recognition)** · **[Results](docs/results.md)**
+**[Live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition)** · **[Model](https://huggingface.co/giosanchez0208/clothing-color-recognition)** · **[Results](docs/results.md)** · **[Study guide](docs/STUDY-GUIDE.md)**
+
+| | |
+|---|---|
+| **67.4%** top-1, **0.4800** KL | 13-way color distribution, held-out test split read once |
+| **4.2 MB**, **6.9 ms** CPU | MobileNetV3-Small INT8, distilled from a ResNet-50 |
+| **28,860** training images | procedurally generated, **zero** real photographs |
+| **11/11** dataset audit checks | strongest color-to-augmentation confound r = 0.037 |
 
 **"Just use the eyedropper tool!"** you might be telling me. Let me be the first to tell you that it's not that easy.
 
@@ -12,7 +19,7 @@ This idea came to me in a discussion with my colleagues from my previous job. We
 
 Of course, I went digging on the internet. That's when I came across Randall Munroe's [XKCD Color Survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). This was my first exposure to the problem of human vs computer color categorization. 
 
-![XKCD color survey results](documentation/images/color-survey-results-chart.webp)
+![XKCD color survey results](assets/images/color-survey-results-chart.webp)
 
 However, this graph is restricted to the saturated faces of the RGB cube. So I couldn't use their database to categorize lighter colors like pastels and off-whites.
 
@@ -26,7 +33,7 @@ The important thing to note is that there is a **base color which is modified**.
 
 The CIELAB color space was used for this analysis because it corresponds more to "perceived color spaces." Since the purpose of this project is related to perception, it only made sense to use a relevant framework.
 
-![The 13 categories as regions in CIELAB](documentation/figures/cielab_categories.png)
+![The 13 categories as regions in CIELAB](assets/figures/cielab_categories.png)
 
 Eyes to the panels on the right. Every category is a **volume**, not a point. This is what surfaces the nature of the problem.
 
@@ -56,11 +63,11 @@ Now, we could go into Blender and create a bunch of assets. That can even be don
 
 ## Summary
 
-The [live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition) runs both models client-side, the color model through ONNX Runtime Web and torso detection through MediaPipe Pose, so nothing you point the camera at leaves your machine. The color model measures around 25 ms per frame in WebAssembly, against 6.9 ms for the same weights natively.
+The [live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition) runs both models client-side, the color model through ONNX Runtime Web and torso detection through MediaPipe Pose, so nothing you point the camera at leaves your machine. The browser runs the 5.85 MB FP32 ONNX export rather than the INT8 checkpoint, at roughly 25 ms per frame in WebAssembly against 6.9 ms for INT8 natively.
 
 I built a system that predicts a **probability distribution over 13 color categories** instead of picking one label and committing to it. It was trained on **28,860 procedurally generated images** that try to imitate the kind of data my pipeline needs to predict a real-world shirt color.
 
-The final model is **4.2 MB** and runs a forward pass in **6.9 ms on CPU**.
+The shipped model is the **INT8 checkpoint at 4.2 MB**, running a forward pass in **6.9 ms on CPU**. The browser demo loads the FP32 ONNX export of that same student, which is 5.85 MB because PyTorch dynamic quantization does not survive an ONNX export.
 
 | | KL divergence | top-1 | size | CPU |
 |---|---:|---:|---:|---:|
@@ -87,7 +94,7 @@ So every training image is built the same way a real one arrives: a garment patc
 
 At inference the pipeline runs in reverse. YOLOv11n-pose finds the shoulders and hips, a torso box is derived from whatever keypoints are visible, and that crop is composed into the exact 224×224 layout the model was trained on.
 
-![The pipeline on a real photo](documentation/figures/pipeline_demo.png)
+![The pipeline on a real photo](assets/figures/pipeline_demo.png)
 
 The middle panel is the important one. **The model never sees your photograph.** It sees a 112×112 torso crop pasted onto a wider context crop. Everything downstream has to respect that, including how you would annotate a test set.
 
@@ -162,7 +169,7 @@ The other thing worth stating: **the probe's most useful output was talking me o
 
 The converged model's largest residual is hue. The obvious move is to train harder on it. I measured the color library's geometry first, and the median gap between adjacent category centers in hue is **13.2°**, while the augmentation rotates by up to **±25°,** 190% of the distance to the next category. Past a certain point, a hue-rotated garment genuinely *is* a different color, but the label was computed before the rotation. The request is ill-posed, and training on it would teach hue-invariance to a color classifier.
 
-![Chromatic categories by hue angle](documentation/figures/cielab_hue_angles.png)
+![Chromatic categories by hue angle](assets/figures/cielab_hue_angles.png)
 
 Meanwhile `temperature`, the axis that models *real* illumination change, fell from **+0.29 to +0.03**, a 9× reduction. The model genuinely learned to see through colored light.
 
@@ -209,7 +216,7 @@ A classical pipeline would need all of that per frame, and it would still need a
 
 The model has never seen a real garment. Here's what happens when you show it one:
 
-![Real photograph results](documentation/figures/real_results.png)
+![Real photograph results](assets/figures/real_results.png)
 
 Three of five correct. The failures are the interesting part:
 
@@ -225,7 +232,7 @@ The sweater sits at CIELAB `L*=57.6, a*=-16.1, b*=27.1`. Its nearest category ce
 
 The problem is *how often that color gets drawn.*
 
-![The green decision boundary](documentation/figures/green_boundary.png)
+![The green decision boundary](assets/figures/green_boundary.png)
 
 The generator samples within a category weighted by `(1 / mahalanobis_distance)²`, so prototypical colors dominate. The three most central greens take **24.8%** of all green draws. Only **2 of 25** library greens sit below 135° of hue, and together they take **4.1%**.
 
@@ -298,7 +305,7 @@ Add `--no-pose` to any inference command to skip YOLO entirely. It uses a center
 
 ### The browser demo
 
-`web/` is the static site published as a HuggingFace Space. It has no build step and no server: ONNX Runtime Web fetches the 5.85 MB model over the CDN and runs it in the tab.
+`web/` is the static site published as a HuggingFace Space. It has no build step and no server: ONNX Runtime Web fetches the 5.85 MB FP32 ONNX export over the CDN and runs it in the tab. That is the same student as the 4.2 MB INT8 checkpoint, exported before quantization.
 
 ```bash
 python -m http.server 8000 --directory web
