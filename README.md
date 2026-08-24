@@ -1,6 +1,6 @@
 # Clothing Color Recognition with Synthetic Data
 
-**[Live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition)** · **[Model](https://huggingface.co/giosanchez0208/clothing-color-recognition)** · **[Results](docs/results.md)** · **[Study guide](docs/STUDY-GUIDE.md)**
+**[Live demo](https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition)** · **[Model](https://huggingface.co/giosanchez0208/clothing-color-recognition)** · **[Results](docs/results.md)**
 
 | | |
 |---|---|

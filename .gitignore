@@ -170,3 +170,4 @@ exports/
 yolo*.pt
 # Vendored browser demo models (staged from checkpoints/ or downloaded)
 web/*.task
+docs/STUDY-GUIDE.md
