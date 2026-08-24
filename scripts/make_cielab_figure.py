@@ -33,7 +33,7 @@ from utils.color_utils import ColorLibrary
 from utils.instrumented_generator import COLOR_CLASSES
 
 CSV = os.path.join(PROJECT_ROOT, "datasets", "categorized_colors_normalized.csv")
-OUT_DIR = os.path.join(PROJECT_ROOT, "documentation", "figures")
+OUT_DIR = os.path.join(PROJECT_ROOT, "assets", "figures")
 
 
 def srgb_of(lib, lab):

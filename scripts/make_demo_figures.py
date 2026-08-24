@@ -1,10 +1,10 @@
 """
 Build the README demo figures from real photographs.
 
-  documentation/figures/pipeline_demo.png   one photo, three panels:
+  assets/figures/pipeline_demo.png   one photo, three panels:
                                             input -> what the model actually
                                             sees -> prediction
-  documentation/figures/real_results.png    a row per sample, same treatment,
+  assets/figures/real_results.png    a row per sample, same treatment,
                                             with the full 13-way distribution
 
 The middle panel matters: the model never sees the photograph. It sees a
@@ -36,8 +36,8 @@ from utils.instrumented_generator import COLOR_CLASSES
 from scripts.predict import (BGR, Pose, TorchBackend, annotate, center_box,
                              compose_input, report, softmax)
 
-IMG_DIR = os.path.join(PROJECT_ROOT, "documentation", "images")
-OUT_DIR = os.path.join(PROJECT_ROOT, "documentation", "figures")
+IMG_DIR = os.path.join(PROJECT_ROOT, "assets", "images")
+OUT_DIR = os.path.join(PROJECT_ROOT, "assets", "figures")
 
 # Ground truth as a person would describe it, used only for honest captions.
 TRUTH = {

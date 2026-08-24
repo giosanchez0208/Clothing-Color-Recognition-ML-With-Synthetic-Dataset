@@ -29,7 +29,7 @@ from utils.instrumented_generator import COLOR_CLASSES
 from scripts.predict import TorchBackend, softmax
 
 CSV = os.path.join(PROJECT_ROOT, "datasets", "categorized_colors_normalized.csv")
-OUT_DIR = os.path.join(PROJECT_ROOT, "documentation", "figures")
+OUT_DIR = os.path.join(PROJECT_ROOT, "assets", "figures")
 SWEATER = (57.6, -16.1, 27.1)
 
 
