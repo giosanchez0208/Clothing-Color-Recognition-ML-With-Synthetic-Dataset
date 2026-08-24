@@ -304,11 +304,102 @@ def run_frame(frame, backend, pose):
     return frame, results
 
 
+def _iou(a, b):
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    union = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def run_video(path, backend, pose, out_path, smooth=0.4, every=1, quiet=False):
+    """Annotate a video file frame by frame.
+
+    Two things differ from the still-image path.
+
+    Frames with no detection are left clean rather than falling back to a center
+    crop. On a still the fallback is a reasonable guess, but across a video it
+    would paint a confident label on empty background whenever the detector
+    blinks, which reads as the model hallucinating.
+
+    Predictions are smoothed per tracked person. A per-frame argmax on video
+    flickers badly, because a garment sitting near a category boundary genuinely
+    straddles it and small lighting changes flip the order. Tracks are matched
+    between frames by box IoU, which is crude but sufficient for footage where
+    people do not teleport, and each track carries an exponential moving average
+    of its distribution. Smoothing the distribution rather than the label means
+    a boundary color stays visibly split instead of alternating between two
+    confident answers.
+    """
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    if not writer.isOpened():
+        cap.release()
+        return None
+
+    roll = RollingMean(15)
+    tracks = []              # [(person_box, ema_probs), ...] from the previous frame
+    n = det = 0
+    ms_disp = 0.0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        n += 1
+        if every > 1 and (n - 1) % every:
+            writer.write(frame)
+            continue
+
+        boxes = pose(frame) if pose else []
+        new_tracks = []
+        for person, torso in boxes:
+            batch, _ = compose_input(frame, torso)
+            t0 = time.perf_counter()
+            probs = softmax(backend(batch)[0])
+            ms_disp = roll.add((time.perf_counter() - t0) * 1000)
+
+            prev = max(tracks, key=lambda t: _iou(person, t[0]), default=None)
+            if prev is not None and _iou(person, prev[0]) > 0.3:
+                probs = prev[1] + smooth * (probs - prev[1])
+            new_tracks.append((person, probs))
+
+            picks, amb = report(probs)
+            annotate(frame, person, picks, amb)
+        tracks = new_tracks
+        det += bool(boxes)
+
+        draw_stats(frame, ms_disp)
+        writer.write(frame)
+        if not quiet and (n % 30 == 0 or n == total):
+            pct = 100.0 * n / total if total else 0.0
+            sys.stdout.write(chr(13) + "    %d/%d (%.0f%%)  detected in %d"
+                             % (n, total, pct, det))
+            sys.stdout.flush()
+
+    cap.release()
+    writer.release()
+    if not quiet:
+        sys.stdout.write(chr(10))
+    return {"frames": n, "detected": det, "fps": fps, "size": (w, h), "out": out_path}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--image")
     ap.add_argument("--camera", action="store_true")
+    ap.add_argument("--video", help="annotate a video file and write an mp4")
+    ap.add_argument("--every", type=int, default=1,
+                    help="run the model every Nth frame; others pass through")
     ap.add_argument("--camera-index", type=int, default=0)
     ap.add_argument("--compare", metavar="IMAGE", help="run torch and onnx on one image")
     ap.add_argument("--export-onnx", action="store_true")
@@ -322,12 +413,29 @@ def main():
     if args.export_onnx:
         sys.exit(0 if export_onnx(args.ckpt, args.onnx) else 1)
 
-    if not any([args.image, args.camera, args.compare]):
+    if not any([args.image, args.camera, args.compare, args.video]):
         ap.print_help()
         sys.exit(0)
 
     def make(name):
         return TorchBackend(args.ckpt) if name == "torch" else OnnxBackend(args.onnx)
+
+    # ── video mode ───────────────────────────────────────────────────────────
+    if args.video:
+        pose = None if args.no_pose else Pose()
+        backend = make(args.backend)
+        out = args.out or os.path.splitext(args.video)[0] + "_annotated.mp4"
+        print("  model  : %s" % getattr(backend, "arch", args.backend))
+        print("  pose   : %s" % ("off (center crop)" if pose is None else "yolo11n"))
+        print("  input  : %s" % args.video)
+        info = run_video(args.video, backend, pose, out, every=args.every)
+        if info is None:
+            sys.exit("ERROR: could not open %s or the writer failed" % args.video)
+        print("  frames : %d, a person was found in %d (%.0f%%)"
+              % (info["frames"], info["detected"],
+                 100.0 * info["detected"] / max(info["frames"], 1)))
+        print("  wrote  : %s" % info["out"])
+        sys.exit(0)
 
     # ── compare mode ─────────────────────────────────────────────────────────
     if args.compare:
