@@ -36,9 +36,12 @@ REPO_NAME = "clothing-color-recognition"
 # (path on disk, path in the repo). The ONNX is what the Space actually loads;
 # the two .pth files are for anyone wanting to continue from the checkpoints.
 MODEL_FILES = [
-    ("checkpoints/distilB_student.onnx", "distilB_student.onnx"),
-    ("checkpoints/distilB_student_fp32.pth", "distilB_student_fp32.pth"),
-    ("checkpoints/distilB_student_int8.pth", "distilB_student_int8.pth"),
+    ("checkpoints/distilV4_student.onnx", "distilV4_student.onnx"),
+    ("checkpoints/distilV4_student_fp32.pth", "distilV4_student_fp32.pth"),
+    ("checkpoints/distilV4_student_int8.pth", "distilV4_student_int8.pth"),
+    # The fitted Gaussians, so anyone can reproduce the labels these were
+    # trained against. Without it the posterior targets cannot be recomputed.
+    ("datasets/category_mixture_v4.json", "category_mixture_v4.json"),
     ("web/MODEL_CARD.md", "README.md"),
 ]
 

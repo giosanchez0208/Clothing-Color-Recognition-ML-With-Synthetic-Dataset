@@ -18,17 +18,17 @@ model-index:
           name: Clothing color distribution
         dataset:
           type: synthetic
-          name: Procedurally generated garments (V3 held-out split)
+          name: Procedurally generated garments (V4 held-out split)
         metrics:
           - type: accuracy
             name: top-1
-            value: 0.674
+            value: 0.628
           - type: kl_divergence
             name: KL divergence
-            value: 0.4800
+            value: 0.5604
           - type: mae
             name: MAE
-            value: 0.0423
+            value: 0.0518
 ---
 
 # Clothing color recognition
@@ -61,9 +61,16 @@ disjoint from train, validation, and the probe set.
 
 | Model | KL | top-1 | MAE | Size | CPU |
 |---|---:|---:|---:|---:|---:|
-| Teacher, ResNet-50 | 0.6226 | 63.2% | 0.0499 | 90.1 MB | 45.4 ms |
-| Student FP32 | 0.4799 | 67.3% | 0.0423 | 6.0 MB | 6.2 ms |
-| **Student INT8** | **0.4800** | **67.4%** | **0.0423** | **4.2 MB** | **6.9 ms** |
+| Teacher, ResNet-50 | 0.6968 | 58.1% | 0.0589 | 90.1 MB | 45.4 ms |
+| Student FP32 | 0.5600 | 62.7% | 0.0518 | 6.0 MB | 6.2 ms |
+| **Student INT8** | **0.5604** | **62.8%** | **0.0518** | **4.2 MB** | **6.9 ms** |
+
+Measured on the V4 test split. The labels are the Gaussian mixture posterior
+over categories rather than one-hot, so a color between green and yellow is
+labeled as being between them. These numbers are therefore not comparable to the
+0.4800 an earlier version reported against one-hot labels. Re-scoring that
+earlier model on these labels gives KL 0.5852 and top-1 63.5%, so the change
+improved KL by 4.2% while costing 0.7 points of top-1.
 
 The student beats its teacher on every metric, which V2 of this project also
 observed but measured with backgrounds shared between train and validation.
@@ -81,9 +88,10 @@ tenth of a point.
 
 | File | What it is |
 |---|---|
-| `distilB_student.onnx` | ONNX, opset 17, dynamic batch. Named I/O: `image` -> `color_logits`. Use this for the browser or cross-platform inference. |
-| `distilB_student_fp32.pth` | PyTorch state dict, FP32. |
-| `distilB_student_int8.pth` | PyTorch state dict, dynamically quantized. CPU only. |
+| `distilV4_student.onnx` | ONNX, opset 17, dynamic batch. Named I/O: `image` -> `color_logits`. Use this for the browser or cross-platform inference. |
+| `distilV4_student_fp32.pth` | PyTorch state dict, FP32. |
+| `distilV4_student_int8.pth` | PyTorch state dict, dynamically quantized. CPU only. |
+| `category_mixture_v4.json` | The fitted Gaussian per category, so the labels can be reproduced. |
 
 The checkpoints carry an `architecture` field so a loader does not have to guess
 which of the three it holds.
@@ -112,14 +120,16 @@ softmax to get the distribution.
 The central claim, that a model trained purely on procedurally generated images
 transfers to photographs, is currently untested at scale.
 
-**Weakest at category boundaries.** Per-axis probing at convergence shows hue
-carrying 4.5 times the cost of the next axis. The known failure is pale green
-read as yellow: the model's learned green/yellow boundary sits near 135 degrees
-of hue while the color library puts it at 117.7, so a band that is labeled green
-in training gets classified yellow at inference. The cause is the generator
-sampling colors with inverse-Mahalanobis weights, which under-represents the
-region right against the boundary; only 2 of 25 library greens sit below 135
-degrees, taking 4.1% of green draws. Gray against white fails similarly.
+**Category boundaries are where the remaining error lives.** In V3 this showed up
+as a hard failure: pale green read as yellow, because the learned green/yellow
+boundary sat near 135 degrees of hue while the color library put it at 117.7.
+The cause was the generator drawing colors with inverse-Mahalanobis weights,
+which starved the boundary region, and then labeling those rare boundary colors
+as 100% certain. V4 addresses both, sampling colors continuously from the fitted
+Gaussians and labeling by the posterior. A boundary color now carries a split
+target rather than a false one, and ambiguous draws rose from 1.8% to 9.8% of
+the dataset. Whether that fully resolves the failure on real photographs is
+untested.
 
 **Color constancy is learned rather than preprocessed.** Applying white balance
 at inference gives no improvement, which is positive evidence the augmentation

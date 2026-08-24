@@ -66,6 +66,10 @@ REGISTRY = [
     ("runB",    "runB_best.pth",             "Run B: flat LR, smoothing 0"),
     ("student", "distilB_student_fp32.pth",  "Student FP32: distilled from Run B"),
     ("int8",    "distilB_student_int8.pth",  "Student INT8: deployable"),
+    # V4: colors sampled from the Gaussian mixture, labels are the posterior.
+    ("runV4",     "runV4_best.pth",            "Run V4: mixture labels, teacher"),
+    ("studentV4", "distilV4_student_fp32.pth", "Student V4 FP32: distilled from Run V4"),
+    ("int8V4",    "distilV4_student_int8.pth", "Student V4 INT8: deployable"),
 ]
 
 

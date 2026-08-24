@@ -32,7 +32,7 @@ Two models, both client-side.
 | Torso detection | MediaPipe Pose Landmarker lite, Apache-2.0, 5.5 MB |
 | Runtime | onnxruntime-web 1.27.0 and tasks-vision 1.0.1, both WASM |
 | Input | 224x224 composite, ImageNet normalization |
-| Held-out test top-1 | 67.4% |
+| Held-out test top-1 | 62.8% |
 
 ## Why MediaPipe and not the pipeline's own detector
 

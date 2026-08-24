@@ -4,10 +4,11 @@
 
 | | |
 |---|---|
-| **67.4%** top-1, **0.4800** KL | 13-way color distribution, held-out test split read once |
+| **62.8%** top-1, **0.5604** KL | 13-way color distribution, held-out test split read once |
 | **4.2 MB**, **6.9 ms** CPU | MobileNetV3-Small INT8, distilled from a ResNet-50 |
 | **28,860** training images | procedurally generated, **zero** real photographs |
-| **11/11** dataset audit checks | strongest color-to-augmentation confound r = 0.037 |
+| **V4** soft categorical labels | a boundary color is labeled `green 56% / yellow 43%`, not 100% either |
+| **11/11** dataset audit checks | strongest color-to-augmentation confound r = 0.028 |
 
 **"Just use the eyedropper tool!"** you might be telling me. Let me be the first to tell you that it's not that easy.
 
@@ -71,10 +72,12 @@ The shipped model is the **INT8 checkpoint at 4.2 MB**, running a forward pass i
 
 | | KL divergence | top-1 | size | CPU |
 |---|---:|---:|---:|---:|
-| Teacher, ResNet-50 | 0.6226 | 63.2% | 90.1 MB | 45.4 ms |
-| **Student, MobileNetV3-Small INT8** | **0.4800** | **67.4%** | **4.2 MB** | **6.9 ms** |
+| Teacher, ResNet-50 | 0.6968 | 58.1% | 90.1 MB | 45.4 ms |
+| **Student, MobileNetV3-Small INT8** | **0.5604** | **62.8%** | **4.2 MB** | **6.9 ms** |
 
-The student is **21× smaller, 6.6× faster, and better than its teacher on every one of the 13 categories.** That result surprised me the first time and it surprised me again when I reproduced it on a properly partitioned test set.
+Measured on the V4 held-out test split, read once. These numbers are not comparable to the 0.4800 an earlier version reported, because V4 changed what a label means; the section below re-scores the old model on the new labels so the comparison is honest.
+
+The student is **21× smaller, 6.6× faster, and better than its teacher on every one of the 13 categories.** That result surprised me the first time and it has now held on three independently generated datasets.
 
 Two ideas do most of the work here.
 
@@ -181,6 +184,8 @@ Meanwhile `temperature`, the axis that models *real* illumination change, fell f
 
 Every model scored on the **same complete 2,000-image test split**, read exactly once, drawn from a background pool disjoint from training, validation, and the probe.
 
+These are the **V3** results, measured against V3's one-hot labels. They are the numbers this project reported before V4 changed what a label means, and they are kept because the reasoning below depends on them. For the shipped model's current numbers see [V4](#v4-labeling-a-color-by-where-it-sits).
+
 | Model | KL | top-1 | MAE | Size | CPU |
 |---|---:|---:|---:|---:|---:|
 | Run A, baseline | 0.8957 | 53.5% | 0.0720 | 90.1 MB | 45.4 ms |
@@ -245,6 +250,29 @@ And here's the part I keep thinking about. The confusion-aware Voronoi resamplin
 I would not have found this without the instrumentation from section 4, and I think it's the most useful thing the project taught me.
 
 ---
+
+---
+
+## V4: labeling a color by where it sits
+
+V3 drew colors from a 325-entry library and labeled each one-hot, by whichever bin the hex came from. That was wrong at category boundaries. A patch of `#8b9a5f` sits between green and yellow, and V3 called it 100% green, so the model was trained to assert certainty the color does not have. The [green case study](docs/results.md) traced the resulting failure: the learned green/yellow boundary landed near 135 degrees while the library's sat at 117.7, and a library green fed back in came out yellow at 96%.
+
+V4 changes how a color becomes a label. Each category is fitted as a Gaussian in CIELAB, colors are sampled continuously from those Gaussians, and the label is the **mixture posterior**, `p(c|x) proportional to |S_c|^(-1/2) exp(-0.5 d_c^2)`. It has no free parameters, no temperature to tune. A prototypical green still returns green 100%. A boundary color returns green 56%, yellow 43%.
+
+![Six colors and their posteriors](assets/figures/mixture_labels.png)
+
+This also retires V2's Voronoi filter, which had deliberately rejected 79 boundary colors *because* one-hot labels could not represent them. Once the label is a distribution, the exclusion is unnecessary. Ambiguous draws rose from 1.8% to 9.8% of the dataset.
+
+Scored on the V4 test split, against the V3 model measured on the same labels:
+
+| | KL | top-1 | MAE |
+|---|---:|---:|---:|
+| V3 student INT8 | 0.5852 | **63.5%** | **0.0475** |
+| **V4 student INT8** | **0.5604** | 62.8% | 0.0518 |
+
+KL improved 4.2%. Top-1 fell 0.7 points and MAE rose, and both are the same trade seen twice: those metrics reward decisiveness, so a model that correctly splits its answer between two plausible categories scores worse on them. That trade was chosen deliberately, and predicted in writing before the run.
+
+Two caveats worth stating. Continuous sampling and soft labels are one coupled change, since continuous sampling has no meaning under one-hot labels, so this run cannot attribute the result to one half. And KL against V4 labels is not comparable to the 0.4800 V3 reported against its own labels, which is why the V3 model was re-scored on V4 labels to produce an honest baseline.
 
 ## Limitations
 

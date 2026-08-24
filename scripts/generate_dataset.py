@@ -42,6 +42,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from utils.instrumented_augment import AXES, META_COLUMNS
+from utils.color_mixture import CategoryMixture
+from utils.mixture_generator import MixtureGenerator
 from utils.instrumented_generator import (
     COLOR_CLASSES, InstrumentedGenerator, STRUCTURE_COLUMNS, probe_plan,
     split_background_pool,
@@ -55,6 +57,7 @@ CSV_COLUMNS = (
     ["filename", "split"] + list(COLOR_CLASSES)
     + ["seed", "probe_axis", "probe_value"]
     + list(STRUCTURE_COLUMNS) + list(META_COLUMNS)
+    + ["categorical_entropy"]
 )
 
 _GENS = {}           # split -> generator, each with its own background pool
@@ -63,7 +66,8 @@ _BASE_SEED = None
 _JPEG_QUALITY = 95
 
 
-def _init_worker(csv_path, bg_dir, image_dir, base_seed, jpeg_quality, pools):
+def _init_worker(csv_path, bg_dir, image_dir, base_seed, jpeg_quality, pools,
+                 mixture_path=None):
     """Build the generators once per worker process.
 
     One generator per split, each restricted to its own DISJOINT background
@@ -78,11 +82,19 @@ def _init_worker(csv_path, bg_dir, image_dir, base_seed, jpeg_quality, pools):
     """
     global _GENS, _IMAGE_DIR, _BASE_SEED, _JPEG_QUALITY
     cv2.setNumThreads(1)
-    _GENS = {
-        split: InstrumentedGenerator(csv_path=csv_path, path_to_bgs=bg_dir,
-                                     bg_pool=pool)
-        for split, pool in pools.items()
-    }
+    if mixture_path:
+        mix = CategoryMixture.load(mixture_path)
+        _GENS = {
+            split: MixtureGenerator(csv_path=csv_path, path_to_bgs=bg_dir,
+                                    mixture=mix, bg_pool=pool)
+            for split, pool in pools.items()
+        }
+    else:
+        _GENS = {
+            split: InstrumentedGenerator(csv_path=csv_path, path_to_bgs=bg_dir,
+                                         bg_pool=pool)
+            for split, pool in pools.items()
+        }
     _IMAGE_DIR = image_dir
     _BASE_SEED = base_seed
     _JPEG_QUALITY = jpeg_quality
@@ -105,7 +117,8 @@ def _make_one(task):
     )
     row = {"filename": filename, "split": split}
     row.update({c: f"{v:.6f}" for c, v in zip(COLOR_CLASSES, vec)})
-    for col in ["seed", "probe_axis", "probe_value"] + list(STRUCTURE_COLUMNS) + list(META_COLUMNS):
+    for col in (["seed", "probe_axis", "probe_value"] + list(STRUCTURE_COLUMNS)
+                + list(META_COLUMNS) + ["categorical_entropy"]):
         row[col] = meta.get(col, "")
     return row
 
@@ -161,6 +174,11 @@ def main():
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--bgs", default=DEFAULT_BGS)
     ap.add_argument("--colors", default=DEFAULT_CSV)
+    ap.add_argument("--mixture", default=None,
+                    help="path to a CategoryMixture json. When given, colors are sampled "
+                         "continuously from the fitted Gaussians and labeled with the "
+                         "mixture posterior (V4) instead of drawn from the discrete "
+                         "library and labeled one-hot (V3).")
     args = ap.parse_args()
 
     image_dir = os.path.join(args.out, "images")
@@ -213,7 +231,7 @@ def main():
             processes=args.workers,
             initializer=_init_worker,
             initargs=(args.colors, args.bgs, image_dir, args.seed, args.jpeg_quality,
-                      pools),
+                      pools, args.mixture),
         ) as pool:
             for row in pool.imap_unordered(_make_one, tasks, chunksize=32):
                 writer.writerow(row)
