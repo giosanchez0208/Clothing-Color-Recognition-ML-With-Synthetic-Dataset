@@ -292,6 +292,10 @@ Two caveats worth stating. Continuous sampling and soft labels are one coupled c
 
 Imagine you want to scrub through security footage for a guy in a red shirt. Right now that's a person watching hours of video.
 
+<video src="https://huggingface.co/spaces/giosanchez0208/clothing-color-recognition/resolve/main/stock_golden_hour_annotated.mp4" controls muted playsinline width="100%"></video>
+
+That's `scripts/predict.py --video` run on stock footage with no per-clip tuning. Each person is tracked frame to frame by box overlap, and the distribution shown is an exponential moving average rather than a raw per-frame prediction, since a color sitting near a category boundary would otherwise flicker between two confident answers as the lighting shifts slightly from one frame to the next.
+
 With this it becomes a query. And because the output is a distribution rather than a label, "kind of blue" is something the system can actually represent. A garment that came back `blue 40%, gray 35%` is close to what a witness means when they hesitate, and a hard classifier would have thrown that hesitation away.
 
 The same problem shows up in retail analytics, wardrobe apps, and dataset triage for anything fashion-related. At 4.2 MB and 6.9 ms on CPU it runs on hardware that has no business running a neural network.

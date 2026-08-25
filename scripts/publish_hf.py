@@ -56,6 +56,10 @@ SPACE_FILES = [
     #   mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/\
     #   pose_landmarker_lite.task
     ("web/pose_landmarker_lite.task", "pose_landmarker_lite.task"),
+    # Not used by the Space itself. Hosted here so the README can embed a
+    # working video without committing it to git.
+    ("assets/videos/stock_golden_hour_annotated.mp4", "stock_golden_hour_annotated.mp4"),
+    ("assets/videos/stock_people_walking_annotated.mp4", "stock_people_walking_annotated.mp4"),
 ]
 
 
