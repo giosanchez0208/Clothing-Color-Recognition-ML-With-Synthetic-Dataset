@@ -53,11 +53,20 @@ const L_SHOULDER = 11, R_SHOULDER = 12, L_HIP = 23, R_HIP = 24;
 const MIN_VIS = 0.4;
 
 // Rejecting non-people is the detector's job, and it only takes the threshold
-// at construction. Swept on two photographs and one plot: at the 0.5 default
-// the plot is detected as a person, 0.7 through 0.9 keeps both people and
-// rejects the plot, and 0.95 starts losing real detections. 0.8 sits in the
-// middle of the usable window.
-const MIN_DETECTION = 0.8;
+// at construction. Originally swept on two photographs and one plot: at the
+// 0.5 default the plot is detected as a person, 0.7 through 0.9 keeps both
+// people and rejects the plot, and 0.95 starts losing real detections. 0.8 was
+// chosen from the middle of that window.
+//
+// That sweep never tested more than one real person in frame. On an ordinary
+// two-person photo, front-facing, plain background, nothing occluded, the
+// second person's own detection confidence measured ~0.77, so 0.8 dropped
+// them. Lowered to 0.6: an unremarkable two-person photo goes from 1 detected
+// to 2, and a genuinely busy street photo (several people, mostly seen from
+// behind) goes from 0 detected to 1, still well short of most of who is in
+// it, since detection confidence runs lower for people not facing the camera.
+// The plot-rejection case above was not re-verified at 0.6.
+const MIN_DETECTION = 0.6;
 
 const ORT_VERSION = "1.27.0";
 const MP_VERSION = "1.0.1";
