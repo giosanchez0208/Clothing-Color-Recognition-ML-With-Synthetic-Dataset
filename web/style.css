@@ -187,6 +187,39 @@ main {
    was found, so the model was shown nothing. */
 #composite.blank { background: var(--field); }
 
+/* ── multi-person nav ─────────────────────────────────────────────────── */
+
+.people-nav {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  margin-top: .6rem;
+}
+
+.nav-btn {
+  padding: .3rem .7rem;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: .8rem;
+  cursor: pointer;
+}
+
+.nav-btn:hover:not(:disabled) { border-color: var(--fg); }
+
+.nav-btn:disabled {
+  color: var(--rule);
+  cursor: default;
+}
+
+.person-count {
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .debug {
   margin: .8rem 0 0;
   padding: .6rem .7rem;

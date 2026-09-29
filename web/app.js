@@ -70,6 +70,8 @@ const el = {
   composite: $("composite"), bars: $("bars"), verdict: $("verdict"),
   latency: $("m-latency"), backend: $("m-backend"), empty: $("empty"),
   compEmpty: $("comp-empty"), debug: $("debug"),
+  peopleNav: $("people-nav"), personPrev: $("person-prev"),
+  personNext: $("person-next"), personCount: $("person-count"),
 };
 
 let session = null;
@@ -78,6 +80,21 @@ let mode = "idle";                         // "idle" | "image" | "camera"
 let stream = null;
 let running = false;
 const inputBuffer = new Float32Array(3 * PLANE);
+
+// How many people a frame or image can carry boxes for. Bounded mainly to cap
+// worst-case inference cost per frame in camera mode; six is already more
+// people than the composite panel is useful for picking between.
+const MAX_PEOPLE = 6;
+
+// Every torso box found in the current frame/image, source-pixel coordinates,
+// plus which one panels 2 and 3 currently reflect. Rebuilt by loop()/showImage()
+// each time detection runs; selectPerson() only ever changes personIdx and
+// re-renders, it never re-detects.
+let people = [];
+let personIdx = 0;
+// The inputs the current `people` came from, kept so selectPerson() can re-run
+// compose()+inference for a different index without a fresh frame or reload.
+let lastFrame = null;
 
 const cctx = el.composite.getContext("2d", { willReadFrequently: true });
 
@@ -210,7 +227,7 @@ function report(probs) {
 
 /* ── pose ──────────────────────────────────────────────────────────────── */
 
-// Torso box from shoulders and hips.
+// Torso box from shoulders and hips, for one person's landmarks.
 //
 // The obvious construction, and the one the Python Pose class uses, is the
 // bounding box of the four joints. That is correct only when the subject faces
@@ -226,9 +243,8 @@ function report(probs) {
 // two midpoints. For a front-facing subject this is arithmetically identical to
 // the bounding box, so nothing changes in the case the Python pipeline was
 // tuned on; it only diverges where the bounding box was wrong.
-function torsoFrom(landmarks, w, h) {
-  if (!landmarks || !landmarks.length) return null;
-  const lm = landmarks[0];
+function torsoOf(lm, w, h) {
+  if (!lm) return null;
 
   // MediaPipe extrapolates joints past the frame edge rather than dropping
   // them, and reports high visibility while doing it, so clamp into the image.
@@ -282,6 +298,21 @@ function torsoFrom(landmarks, w, h) {
                Math.round(shMid[0] + bw / 2), Math.round(shMid[1] + bh)];
   if (box[2] - box[0] <= 10 || box[3] - box[1] <= 10) return null;
   return box;
+}
+
+// One {box, lm} per detected person, left to right, so the order Next/Prev
+// walks through is stable and legible rather than whatever order MediaPipe
+// returns. People it could not build a plausible box for (shoulders out of
+// frame, too small, too side-on) are dropped rather than kept as a null entry,
+// so every index in the result is choosable. lm rides along so the debug
+// overlay can still draw the joints a selected box came from.
+function torsosFrom(landmarksList, w, h) {
+  if (!landmarksList) return [];
+  const found = landmarksList
+    .map((lm) => ({ box: torsoOf(lm, w, h), lm }))
+    .filter((p) => p.box);
+  found.sort((a, b) => a.box[0] - b.box[0]);
+  return found;
 }
 
 /* ── rendering ─────────────────────────────────────────────────────────── */
@@ -345,20 +376,44 @@ function clearPrediction(message) {
   }
   el.verdict.textContent = "";
   el.latency.textContent = "not run";
+  updatePeopleNav();
   if (message) setStatus(message);
 }
 
-// Draws the torso box. The wider context rect and the landmarks it was built
-// from are diagnostics rather than part of the demo, so they appear only under
-// ?debug=1: if the dots sit on the subject and the box does not, the arithmetic
-// here is wrong; if the dots are off the subject, the pose model is wrong and no
-// box construction on top of it can recover.
-function drawOverlay(rects, dispW, dispH, srcW, srcH, landmarks) {
+// Shows or hides the prev/next row and its "person N of M" count. Hidden
+// entirely at 0 or 1 people, since there is then nothing to switch between.
+function updatePeopleNav() {
+  const n = people.length;
+  el.peopleNav.hidden = n <= 1;
+  if (n <= 1) return;
+  el.personCount.textContent = `person ${personIdx + 1} of ${n}`;
+  el.personPrev.disabled = personIdx === 0;
+  el.personNext.disabled = personIdx === n - 1;
+}
+
+// Draws every detected person as a faint locator box and the selected one as
+// the bold box compose() actually cropped, so switching people is legible: you
+// can see who else was found before clicking next. The wider context rect and
+// the landmarks the selected box was built from are diagnostics rather than
+// part of the demo, so they appear only under ?debug=1: if the dots sit on the
+// subject and the box does not, the arithmetic here is wrong; if the dots are
+// off the subject, the pose model is wrong and no box construction on top of
+// it can recover.
+function drawOverlay(people, personIdx, rects, dispW, dispH, srcW, srcH) {
   const c = el.overlay;
   if (c.width !== dispW || c.height !== dispH) { c.width = dispW; c.height = dispH; }
   const g = c.getContext("2d");
   g.clearRect(0, 0, dispW, dispH);
   const sx = dispW / srcW, sy = dispH / srcH;
+
+  g.setLineDash([]);
+  g.lineWidth = 1.5;
+  g.strokeStyle = "rgba(255,255,255,0.55)";
+  people.forEach((p, i) => {
+    if (i === personIdx) return;
+    const [x1, y1, x2, y2] = p.box;
+    g.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+  });
 
   if (rects) {
     if (DEBUG) {
@@ -378,8 +433,8 @@ function drawOverlay(rects, dispW, dispH, srcW, srcH, landmarks) {
     g.strokeRect(ix * sx, iy * sy, iSide * sx, iSide * sy);
   }
 
-  if (!DEBUG || !landmarks || !landmarks.length) return;
-  const lm = landmarks[0];
+  const lm = people[personIdx] && people[personIdx].lm;
+  if (!DEBUG || !lm) return;
   const pt = (i) => [Math.min(Math.max(lm[i].x, 0), 1) * srcW * sx,
                      Math.min(Math.max(lm[i].y, 0), 1) * srcH * sy];
 
@@ -401,15 +456,17 @@ function drawOverlay(rects, dispW, dispH, srcW, srcH, landmarks) {
 }
 
 // Numeric dump for when the dots alone do not settle it. Enable with ?debug=1.
+// `lm` is the selected person's own landmarks, already picked out by the
+// caller, not the raw MediaPipe result for every person found.
 const DEBUG = new URLSearchParams(location.search).has("debug");
 
-function debugDump(srcW, srcH, dispW, dispH, landmarks, box, rects) {
+function debugDump(srcW, srcH, dispW, dispH, lm, box, rects) {
   if (!DEBUG || !el.debug) return;
-  const lm = landmarks && landmarks[0];
   const px = (i) => lm ? `(${Math.round(lm[i].x * srcW)}, ${Math.round(lm[i].y * srcH)}) vis=${lm[i].visibility.toFixed(2)}`
                        : "n/a";
   el.debug.hidden = false;
   el.debug.textContent = [
+    `people      ${people.length} found, showing ${people.length ? personIdx + 1 : 0}`,
     `source      ${srcW} x ${srcH}      displayed ${dispW} x ${dispH}`,
     `scale       x ${(dispW / srcW).toFixed(4)}   y ${(dispH / srcH).toFixed(4)}`,
     `L_shoulder  ${px(L_SHOULDER)}`,
@@ -427,11 +484,14 @@ function debugDump(srcW, srcH, dispW, dispH, landmarks, box, rects) {
 
 let smoothed = null;
 
-async function infer(pixels, srcW, srcH, dispW, dispH, box, smooth, landmarks) {
-  if (!session || !srcW || !srcH) return;
+// Runs the color model against one already-chosen box. Drawing the overlay
+// and the debug dump is the caller's job now, because both need the full
+// `people` list (to draw everyone, not just the one being inferred), and
+// camera mode wants to keep smoothing across frames while a fresh image does
+// not, which only the caller knows.
+async function infer(pixels, srcW, srcH, box, smooth) {
+  if (!session || !srcW || !srcH) return null;
   const rects = compose(pixels, srcW, srcH, box);
-  drawOverlay(rects, dispW, dispH, srcW, srcH, landmarks);
-  debugDump(srcW, srcH, dispW, dispH, landmarks, box, rects);
   el.compEmpty.hidden = true;
   el.composite.classList.remove("blank");
 
@@ -453,6 +513,38 @@ async function infer(pixels, srcW, srcH, dispW, dispH, box, smooth, landmarks) {
   return rects;
 }
 
+// Re-renders panels 2 and 3 for a different already-detected person, without
+// re-running pose detection. loop() and showImage() rebuild `people` and
+// `lastFrame` every time they actually detect; this only ever changes which
+// of those already-found people panels 2 and 3 reflect.
+//
+// Guarded by `busy` because this awaits an inference call: camera mode's loop
+// calls this once per frame, and a Next/Prev click landing while that call is
+// still in flight would otherwise race it, with whichever call resolves last
+// winning the render regardless of which one the user actually clicked.
+let busy = false;
+
+async function selectPerson(i) {
+  if (!people.length || !lastFrame || busy) return;
+  busy = true;
+  try {
+    personIdx = Math.max(0, Math.min(i, people.length - 1));
+    updatePeopleNav();
+
+    const { pixels, srcW, srcH, dispW, dispH } = lastFrame;
+    const box = people[personIdx].box;
+    const rects = await infer(pixels, srcW, srcH, box, mode === "camera");
+    drawOverlay(people, personIdx, rects, dispW, dispH, srcW, srcH);
+    debugDump(srcW, srcH, dispW, dispH, people[personIdx].lm, box, rects);
+    if (rects) {
+      const who = people.length > 1 ? `person ${personIdx + 1} of ${people.length}, ` : "";
+      setStatus(`${who}torso found, ${rects.magnification.toFixed(2)}x inner magnification`);
+    }
+  } finally {
+    busy = false;
+  }
+}
+
 let missStreak = 0;
 
 async function loop() {
@@ -463,17 +555,20 @@ async function loop() {
     // Freeze the frame first, then run both models against that one snapshot.
     const pixels = snapshot(v, w, h);
     const res = pose.detect(srcPad);
-    const box = torsoFrom(res.landmarks, w, h);
-    if (box) {
+    people = torsosFrom(res.landmarks, w, h);
+    lastFrame = { pixels, srcW: w, srcH: h, dispW: v.clientWidth, dispH: v.clientHeight };
+    if (people.length) {
       missStreak = 0;
-      const r = await infer(pixels, w, h, v.clientWidth, v.clientHeight, box, true,
-                            res.landmarks);
-      setStatus(`torso found, ${r.magnification.toFixed(2)}x inner magnification`);
+      // Detection reruns every frame, so keep whichever person was already
+      // selected (clamped to this frame's count) rather than snapping back to
+      // the first: resetting here would make Next/Prev do nothing in camera
+      // mode. There is no identity tracking behind this, so on a frame where
+      // people are gained, lost, or reorder left to right, "person 2" can
+      // start referring to someone else.
+      await selectPerson(personIdx);
     } else {
-      // Blank the prediction but keep drawing whatever landmarks came back, so
-      // a bad pose is visible rather than silently discarded.
-      drawOverlay(null, v.clientWidth, v.clientHeight, w, h, res.landmarks);
-      debugDump(w, h, v.clientWidth, v.clientHeight, res.landmarks, null, null);
+      drawOverlay(people, 0, null, v.clientWidth, v.clientHeight, w, h);
+      debugDump(w, h, v.clientWidth, v.clientHeight, null, null, null);
       if (++missStreak === 1) clearPrediction("no person detected");
     }
   }
@@ -534,16 +629,16 @@ function showImage(url) {
     const w = el.photo.naturalWidth, h = el.photo.naturalHeight;
     const pixels = snapshot(el.photo, w, h);
     const res = pose.detect(srcPad);
-    const box = torsoFrom(res.landmarks, w, h);
-    if (!box) {
-      drawOverlay(null, el.photo.clientWidth, el.photo.clientHeight, w, h, res.landmarks);
-      debugDump(w, h, el.photo.clientWidth, el.photo.clientHeight, res.landmarks, null, null);
+    people = torsosFrom(res.landmarks, w, h);
+    personIdx = 0;                            // a fresh image always starts on the first person
+    lastFrame = { pixels, srcW: w, srcH: h, dispW: el.photo.clientWidth, dispH: el.photo.clientHeight };
+    if (!people.length) {
+      drawOverlay(people, 0, null, el.photo.clientWidth, el.photo.clientHeight, w, h);
+      debugDump(w, h, el.photo.clientWidth, el.photo.clientHeight, null, null, null);
       clearPrediction("no person detected in this image");
       return;
     }
-    const r = await infer(pixels, w, h, el.photo.clientWidth, el.photo.clientHeight,
-                          box, false, res.landmarks);
-    setStatus(`torso found, ${r.magnification.toFixed(2)}x inner magnification`);
+    await selectPerson(0);
   };
   el.photo.src = url;
 }
@@ -587,7 +682,7 @@ async function boot() {
     pose = await PoseLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: "pose_landmarker_lite.task" },
       runningMode: "IMAGE",
-      numPoses: 1,
+      numPoses: MAX_PEOPLE,
       minPoseDetectionConfidence: MIN_DETECTION,
       minPosePresenceConfidence: MIN_DETECTION,
     });
@@ -605,6 +700,8 @@ async function boot() {
     const f = el.file.files && el.file.files[0];
     if (f) showImage(URL.createObjectURL(f));
   };
+  el.personPrev.onclick = () => selectPerson(personIdx - 1);
+  el.personNext.onclick = () => selectPerson(personIdx + 1);
 
   document.addEventListener("dragover", (e) => e.preventDefault());
   document.addEventListener("drop", (e) => {
@@ -616,9 +713,10 @@ async function boot() {
   // Exposed so the pipeline can be exercised from the console against the
   // Python reference, which is how the resampler bug was caught.
   window.__demo = { compose, infer, showImage, toTensor, softmax, report,
-                    torsoFrom, snapshot, srcPad,
+                    torsoOf, torsosFrom, selectPerson, snapshot, srcPad,
                     get session() { return session; },
-                    get pose() { return pose; }, compBuf };
+                    get pose() { return pose; },
+                    get people() { return people; }, compBuf };
 }
 
 boot();
